@@ -1,0 +1,23 @@
+PIRATES: AGE OF FREEDOM: Installation auf Android
+=========================================
+
+Der Ordner enthält das Spiel als installierbare Web-App (PWA):
+  index.html, manifest.webmanifest, sw.js, icon-192.png, icon-512.png, icon-maskable-512.png
+
+Eine Web-App läuft nur, wenn sie über eine https-Adresse geladen wird (nicht aus dem Dateimanager).
+
+SCHRITT 1: Ordner ins Internet stellen (kostenlos, ohne Programmieren)
+  Variante A: Netlify Drop (app.netlify.com/drop): den ganzen Ordner auf die Seite ziehen.
+  Variante B: GitHub Pages: neues Repository anlegen, die Dateien hochladen, unter Settings > Pages aktivieren.
+  Variante C: jeder andere Webspace mit https.
+
+SCHRITT 2: Auf dem Handy installieren
+  1. Die Adresse in Chrome auf dem Android-Handy öffnen.
+  2. Menü (drei Punkte) > "App installieren" oder "Zum Startbildschirm hinzufügen".
+  3. Das Spiel startet danach im Vollbild wie eine normale App und funktioniert auch ohne Internet.
+
+OPTIONAL: richtige APK-Datei
+  Auf pwabuilder.com die Adresse eingeben und "Android" wählen. Dort entsteht ein Paket,
+  das du installieren oder in den Play Store hochladen kannst.
+
+Spielstand: wird im Browser des Handys gespeichert. Wer die Browserdaten löscht, verliert ihn.
