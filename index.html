@@ -1098,7 +1098,7 @@ function gatherBattle(first){
 function startBattle(list){
   if(inBattle||!list.length)return;
   for(const e of list)if(!legalTarget(e.nat)&&!S.wars[e.nat]){S.wars[e.nat]=true;toast('Verbrechen! '+NAT[e.nat].n+' erklärt dir den Krieg. Begnadigung gibt es im Rathaus.')}
-  battle={world:{px:P.x,py:P.y,ph:P.h},saved:list.map(e=>({e:e,x:e.x,y:e.y,h:e.h,v:e.v,lead:e.lead,dest:e.dest})),list:list,t:0,edge:0,endT:0};
+  battle={tw:battleTowers(),twT:2,world:{px:P.x,py:P.y,ph:P.h},saved:list.map(e=>({e:e,x:e.x,y:e.y,h:e.h,v:e.v,lead:e.lead,dest:e.dest})),list:list,t:0,edge:0,endT:0};
   setBounds(true);
   P.x=ARX-230;P.y=ARY;P.h=0;P.v=Math.min(P.v,30);P.rl=[0.5,0.5];P.turnS=0;
   syncFleet();allyPlace(true);
@@ -1107,6 +1107,7 @@ function startBattle(list){
   $('stk').hidden=true;$('knob').hidden=true;
   bcx=ARX;bcz=ARY;bsp=300;
   toast('Seeschlacht! Segle zum Rand, um zu fliehen.');
+  {const k=WX.kind;if(k==='fog')toast('Nebel: Gegner tauchen erst auf kurze Entfernung auf.');else if(k==='storm')toast('Sturm: Deine Kugeln streuen stark. Geh näher heran!');else if(k==='rain')toast('Regen: Nasses Pulver, alle laden langsamer nach.');else if(k==='calm')toast('Flaute: Kaum Wind, alle Schiffe sind langsam.');if(battle&&battle.tw)toast('Deine Kanonentürme in der Nähe feuern mit!')}
 }
 function endBattle(kind){
   const bt=battle;if(!bt)return;
@@ -1173,7 +1174,7 @@ function startTownBattle(p){
   const fort={x:ARX+345,y:ARY,hp:p.hp,mh:p.maxhp,cd:2.5,fl:0};
   const guards=[];
   for(let i=0;i<(big?2:1);i++){const e=mkShip(i===0?'s':'p',p.f,ARX+215+i*14,ARY+(i?1:-1)*130,Math.PI,{});e.guard=true;e.alert=10;e.v=30;guards.push(e);enemies.push(e)}
-  battle={world:{px:P.x,py:P.y,ph:P.h},saved:[],list:guards,t:0,edge:0,endT:0,town:{p:p,fort:fort,bats:bats}};
+  battle={tw:battleTowers(),twT:2,world:{px:P.x,py:P.y,ph:P.h},saved:[],list:guards,t:0,edge:0,endT:0,town:{p:p,fort:fort,bats:bats}};
   buildTownArena(p);
   setBounds(true);
   P.x=ARX-230;P.y=ARY;P.h=0;P.v=Math.min(P.v,30);P.rl=[0.5,0.5];P.turnS=0;
@@ -1253,8 +1254,10 @@ function townText(){
   const t=battle.town,al=t.bats.filter(b=>b.hp>0).length,sh=battle.list.filter(e=>e.sink===0).length;
   return 'Festung '+Math.round(100*t.fort.hp/t.fort.mh)+'% · Batterien '+al+'/'+t.bats.length+' · Schiffe '+sh;
 }
+function battleTowers(){let n=0;for(const p of PORTS){if(!isOwn(p))continue;if(Math.hypot(p.x-P.x,p.y-P.y)<700)n+=pm(p).tw||0}return n}
 function updateBattle(dt){
   const bt=battle;T+=dt;bt.t+=dt;
+  if(bt.tw&&!bt.town){bt.twT-=dt;if(bt.twT<=0){bt.twT=3.4/bt.tw;const L=bt.list.filter(e=>!e.dead&&e.sink===0);if(L.length){const tg=L[Math.floor(rnd()*L.length)];towerShot(BXA+20,tg.y+(rnd()-.5)*160,tg)}}}
   wind.dir+=Math.sin(T*0.045)*0.018*dt;wind.str=(0.95+0.25*Math.sin(T*0.03+1))*(1+0.35*WX.storm)*(1-.8*(WX.calm||0));stormDamage(dt);
   const cl=CLS[S.cls],dx=stick.x-stick.ox,dy=stick.y-stick.oy;
   if(stick.a&&Math.hypot(dx,dy)>14){
@@ -1398,13 +1401,13 @@ function fire(s,side,own,count,dmg,L,kind){
   for(let i=0;i<cnt;i++){
     const off=((i%count)-(count-1)/2)*spacing;
     const px=s.x+Math.cos(s.h)*off+Math.cos(n)*8,py=s.y+Math.sin(s.h)*off+Math.sin(n)*8;
-    const a=n+(rnd()-.5)*(kind==='grape'?0.5:0.2)*(1+WX.storm*0.9+WX.fog*0.3),sp=320+rnd()*40;
+    const a=n+(rnd()-.5)*(kind==='grape'?0.5:0.2)*(1+WX.storm*(inBattle?1.6:0.9)+WX.fog*0.3),sp=320+rnd()*40;
     balls.push({x:px,y:py,vx:Math.cos(a)*sp+Math.cos(s.h)*s.v*.5,vy:Math.sin(a)*sp+Math.sin(s.h)*s.v*.5,l:(kind==='grape'?.34:(own==='p'?.95*RNGL():own==='a'?.9:.78))*(1+.1*Math.cos(angDiff(a,wind.dir))),o:own,d:dmg,k:kind||'ball'});
     for(let k=0;k<4;k++)emit(px,py,Math.cos(a)*25+(rnd()-.5)*25,Math.sin(a)*25+(rnd()-.5)*25,1.3,3,GREY,9,7,4);
     emit(px,py,Math.cos(a)*10,Math.sin(a)*10,.18,4,FIRE,3,7,0);
   }
 }
-function reloadTime(){return ageRel()*(bioIs(1)?.95:1)*(S.stn===1?.82:S.stn===3?1.18:1)*(2.6-1.1*(S.crew/CLS[S.cls].maxCrew))*(1-0.1*((S.up&&S.up.rel)||0))*((S.off&&S.off.gun)?1-(.1+.02*(offLv()-1)):1)*(mor()<30?1.2:mor()>80?.92:1)}
+function reloadTime(){return (1+.15*(WX.rain||0))*ageRel()*(bioIs(1)?.95:1)*(S.stn===1?.82:S.stn===3?1.18:1)*(2.6-1.1*(S.crew/CLS[S.cls].maxCrew))*(1-0.1*((S.up&&S.up.rel)||0))*((S.off&&S.off.gun)?1-(.1+.02*(offLv()-1)):1)*(mor()<30?1.2:mor()>80?.92:1)}
 function playerFire(side){
   if(mode!=='battle'&&!(mode==='play'&&nearHostilePort))return;
   const i=side<0?0:1;if(P.rl[i]>0)return;
@@ -1495,7 +1498,7 @@ function updEnemy(e,dt){
   if(dp<270&&((hn&&e.t!=='m')||e.alert>0)&&(mode==='play'||mode==='battle')){
     for(const sd of [-1,1]){
       const i=sd<0?0:1,n=e.h+sd*Math.PI/2;
-      if(e.rl[i]<=0&&Math.abs(angDiff(n,b))<0.22){e.rl[i]=(5.5+rnd()*1.5)*DM().r;fire(e,sd,'e',def.cannons,def.dmg*0.6*DM().d,def.L)}
+      if(e.rl[i]<=0&&Math.abs(angDiff(n,b))<0.22){e.rl[i]=(5.5+rnd()*1.5)*DM().r*(1+.15*(WX.rain||0));fire(e,sd,'e',def.cannons,def.dmg*0.6*DM().d,def.L)}
     }
   }
   if(inBattle&&ALL.length&&e.t!=='m'&&(e.alert>0||hn)){
@@ -1528,7 +1531,7 @@ function update(dt){
   if(S.hull<maxHull()*0.35){P.sm-=dt;if(P.sm<=0){P.sm=.12;emit(P.x,P.y,(rnd()-.5)*10,(rnd()-.5)*10,1.6,4,SMOKE,10,8,14)}}
   if(shake>0)shake-=dt;
   for(const e of enemies){updEnemy(e,dt);if(e.sink===0)curPush(e,dt)}
-  updAllies(dt);stnTick(dt);ramCheck(dt);siteTick();if(S.raid)raidTick();convTick(dt);cldTick(dt);
+  updAllies(dt);stnTick(dt);ramCheck(dt);siteTick();if(S.raid)raidTick();convTick(dt);cldTick(dt);towerTick(dt);encTick(dt);
   battleCool-=dt;
   if(!inBattle&&battleCool<=0){
     const trig=enemies.find(e=>e.sink===0&&e.t!=='m'&&e.t!=='f'&&hostileNat(e.nat)&&Math.hypot(e.x-P.x,e.y-P.y)<300);
@@ -2300,10 +2303,11 @@ function renderScene(dt){
       g.strokeStyle='rgba(255,255,255,'+(ready?0.35:0.12)+')';g.lineWidth=1;g.setLineDash([5,6]);g.beginPath();g.arc(P.x,P.y,rng,dir-0.11,dir+0.11);g.stroke();g.setLineDash([]);
     }
   }
-  ambient(g,dt);drawNature(g,dt);drawTownLife(g);drawVillages(g);drawRaid(g);
+  ambient(g,dt);drawNature(g,dt);drawTownLife(g);drawTowers(g);drawVillages(g);drawRaid(g);drawEnc(g);
   /* Gegner */
   for(const e of enemies){
     if(e.dead||!visible(e.x,e.y,90))continue;
+    if(inBattle&&WX.fog>.35&&e.sink===0&&Math.hypot(e.x-P.x,e.y-P.y)>230+(1-WX.fog)*400){continue}
     if(fogAt(e.x,e.y)>.5&&Math.hypot(e.x-P.x,e.y-P.y)>230)continue;
     {const vd=Math.hypot(e.x-P.x,e.y-P.y);if((todLight()<.3&&vd>760)||(WX.storm>.6&&vd>900))continue}
     const d=ET[e.t],sk=e.sink>0,k=sk?clamp(e.sink/2.6,0,1):0;
@@ -2391,7 +2395,7 @@ function drawMini(){
   for(const t of S.tr)if(t.hint){mctx.beginPath();mctx.arc(t.hint.x*k,t.hint.y*k,t.hint.r*k,0,TAU);mctx.stroke()}
   for(const e of enemies){if(e.sink>0)continue;mctx.fillStyle=e.t==='f'?'#ffd04a':e.nat==='pir'?'#222':(FAC[e.nat]?FAC[e.nat].c:'#e9e6dc');mctx.strokeStyle=hostileNat(e.nat)?'#ff4a3a':'#6fe08a';mctx.lineWidth=1.6;mctx.beginPath();mctx.arc(e.x*k,e.y*k,e.t==='f'?5:3.8,0,TAU);mctx.fill();mctx.stroke()}
   for(const q of SITES){if(!siteKnown(q))continue;mctx.fillStyle=q.k==='w'?'#8fe3ff':'#e0a060';mctx.fillRect(q.x*k-2,q.y*k-2,4,4)}
-  drawConvMini(k);if(S.story&&S.story.ch===4){mctx.strokeStyle='#ffd04a';mctx.lineWidth=2;mctx.beginPath();mctx.arc(S.story.hx*k,S.story.hy*k,7,0,TAU);mctx.stroke()}for(const v of VIL){mctx.fillStyle='#c9a55a';mctx.beginPath();mctx.moveTo(v.x*k,v.y*k-3);mctx.lineTo(v.x*k-3,v.y*k+2);mctx.lineTo(v.x*k+3,v.y*k+2);mctx.fill()}
+  drawConvMini(k);for(const e of SEAE){mctx.fillStyle=e.k==='ghost'?'#b8c4cc':'#ffffff';mctx.fillRect(e.x*k-1.5,e.y*k-1.5,3,3)}if(S.story&&S.story.ch===4){mctx.strokeStyle='#ffd04a';mctx.lineWidth=2;mctx.beginPath();mctx.arc(S.story.hx*k,S.story.hy*k,7,0,TAU);mctx.stroke()}for(const v of VIL){mctx.fillStyle='#c9a55a';mctx.beginPath();mctx.moveTo(v.x*k,v.y*k-3);mctx.lineTo(v.x*k-3,v.y*k+2);mctx.lineTo(v.x*k+3,v.y*k+2);mctx.fill()}
   if(S.raid){mctx.strokeStyle=(T*2|0)%2?'#ff4a3a':'#ffd0c0';mctx.lineWidth=2.4;mctx.beginPath();mctx.arc(S.raid.x*k,S.raid.y*k,8,0,TAU);mctx.stroke()}
   for(const a of ALL){if(a.sink>0)continue;mctx.fillStyle='#7be08a';mctx.beginPath();mctx.arc(a.x*k,a.y*k,2.2,0,TAU);mctx.fill()}
   mctx.save();mctx.translate(P.x*k,P.y*k);mctx.rotate(P.h);mctx.fillStyle='#ffe28a';mctx.beginPath();mctx.moveTo(8,0);mctx.lineTo(-5,-5);mctx.lineTo(-5,5);mctx.closePath();mctx.fill();mctx.restore();
@@ -2424,7 +2428,7 @@ function hud(){
   const bb=$('bbtn');if(nearBoard&&(mode==='play'||mode==='battle')){bb.hidden=false;bb.textContent='Entern: '+ET[nearBoard.t].n}else bb.hidden=true;
   const ab=$('abtn');if(nearTarget&&mode==='play'){ab.hidden=false;ab.textContent='Angreifen: '+ET[nearTarget.t].n}else ab.hidden=true;
   $('bframe').hidden=!(mode==='battle'||(mode==='board'&&inBattle));$('bhud').hidden=mode!=='battle';
-  if(battle)$('bcount').textContent=battle.town?townText():'Gegner: '+battle.list.filter(e=>e.sink===0&&!e.dead).length;
+  if(battle)$('bcount').textContent=(battle.town?townText():'Gegner: '+battle.list.filter(e=>e.sink===0&&!e.dead).length)+({fog:' · Nebel',storm:' · Sturm',rain:' · Regen',calm:' · Flaute'}[WX.kind]||'');
   $('fixbtn').hidden=!((mode==='play'||mode==='battle')&&S.hull<maxHull()-1);
   const fireOk=mode==='battle'||(mode==='play'&&nearHostilePort);$('fires').hidden=!fireOk;$('ammobtn').hidden=!fireOk;
   try{if(LANG==='en')trDom($('hud'))}catch(e){}
@@ -2577,6 +2581,7 @@ function renderPanel(){
       h+='<div class="kv"><span>Garnison</span><b>'+m.gar+' Soldaten</b></div><div class="kv"><span>Ausbaustufe</span><b>'+m.lvl+' / 3</b></div>';
       h+='<p class="hint"><b>Steuersatz</b> (niedrig: zufriedener, hoch: mehr Gold, aber Unruhe)</p><div class="btnrow" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px"><button data-act="pm:tax:0" class="'+(m.tax===0?'primary':'')+'">Niedrig</button><button data-act="pm:tax:1" class="'+(m.tax===1?'primary':'')+'">Normal</button><button data-act="pm:tax:2" class="'+(m.tax===2?'primary':'')+'">Hoch</button></div>';
       h+='<div class="item"><div><b>Gouverneur</b><small>'+(m.gov?'Im Amt: mehr Einnahmen und zufriedenere Bürger.':'+25 % Einnahmen und mehr Zufriedenheit.')+'</small></div>'+(m.gov?'<span class="hint">Im Amt</span>':'<button class="primary" data-act="pm:gov">400 Gold</button>')+'</div>';
+      {const tw=m.tw||0;h+='<div class="item"><div><b>Kanonenturm bauen <span class="chip hi">'+tw+'/3</span></b><small>Türme beschießen feindliche Schiffe vor dem Hafen und in Seeschlachten in der Nähe. Jeder Turm stärkt die Verteidigung, wenn du nicht da bist.</small></div><button data-act="pm:tw"'+(tw>=3?' disabled':'')+'>'+(tw>=3?'Max':900*(tw+1)+' Gold')+'</button></div>'}
       h+='<div class="item"><div><b>Garnison verstärken</b><small>+10 Soldaten. Stärkt die Festung und schützt vor Rückeroberung.</small></div><button data-act="pm:gar">150 Gold</button></div>';
       h+=m.lvl<3?'<div class="item"><div><b>Hafen ausbauen</b><small>Stufe '+(m.lvl+1)+': +35 % Einnahmen.</small></div><button data-act="pm:lvl">'+600*(m.lvl+1)+' Gold</button></div>':'<div class="item"><div><b>Hafen ausgebaut</b><small>Höchste Stufe erreicht.</small></div></div>';
       h+=plHTML(p);
@@ -2691,6 +2696,7 @@ function act(e){
       const m=pm(p),w=a[1];
       if(w==='tax'){m.tax=+a[2]}
       else if(w==='gov'){if(m.gov)toast('Schon im Amt');else if(S.gold<400)toast('Nicht genug Gold');else{S.gold-=400;m.gov=1;toast('Neuer Gouverneur für '+p.n)}}
+      else if(w==='tw'){const tw=m.tw||0,c=900*(tw+1);if(tw>=3)toast('Höchste Stufe erreicht');else if(S.gold<c)toast('Nicht genug Gold');else{S.gold-=c;m.tw=tw+1;toast('Kanonenturm gebaut! '+p.n+' hat jetzt '+m.tw+' Türme.')}}
       else if(w==='gar'){if(S.gold<150)toast('Nicht genug Gold');else{S.gold-=150;m.gar+=10;p.maxhp=140+m.gar*3;p.hp=Math.min(p.maxhp,p.hp+30);toast('Garnison verstärkt: '+m.gar+' Soldaten')}}
       else if(w==='lvl'){const c=600*(m.lvl+1);if(m.lvl>=3)toast('Schon voll ausgebaut');else if(S.gold<c)toast('Nicht genug Gold');else{S.gold-=c;m.lvl++;toast(p.n+' ausgebaut: Stufe '+m.lvl)}}
       save();
@@ -3089,7 +3095,7 @@ function siegeTick(){const G=S.siege;if(!G||inBattle)return;const p=portByName(G
   if(G.sp){const alive=enemies.filter(e=>e.siege&&!e.dead&&e.sink===0).length;if(alive===0&&d<1500){S.gold+=400;addMor(10);const m=pm(p);m.hp=Math.min(100,m.hp+15);S.st=S.st||{};S.st.siege=(S.st.siege||0)+1;toast('Die Belagerung von '+p.n+' ist gebrochen! Die Bürger feiern dich und zahlen 400 Gold.');S.siege=null}}}
 function siegeDay(){const G=S.siege;if(!G)return;const p=portByName(G.port);if(!p||!isOwn(p)){S.siege=null;return}
   if(S.day<=G.day||(G.sp&&S.day<=G.day+2&&Math.hypot(P.x-p.x,P.y-p.y)<1500))return;
-  const m=pm(p),atk=15+rnd()*35,def=m.gar+(p.hp/p.maxhp)*10+(m.gov?5:0);for(const e of enemies)if(e.siege){e.siege=0;e.fleet=0}S.siege=null;
+  const m=pm(p),atk=15+rnd()*35,def=m.gar+(p.hp/p.maxhp)*10+(m.gov?5:0)+(m.tw||0)*12;for(const e of enemies)if(e.siege){e.siege=0;e.fleet=0}S.siege=null;
   if(atk>def){loseOwn(p,p.n+' wurde von der Flotte der '+NAT[G.nat].n+' erobert! Eine stärkere Garnison hätte es gehalten.')}
   else{m.gar=Math.max(0,Math.round(m.gar*0.7));p.maxhp=140+m.gar*3;p.hp=Math.min(p.hp,p.maxhp);toast(p.n+': Die Garnison hat den Angriff ohne dich abgewehrt, aber Verluste erlitten.')}}
 /* ---------- Schiff gestalten ---------- */
@@ -3141,6 +3147,51 @@ function tipTick(){if(!S||mode==='title'||mode==='dead'){if(!$('tip').hidden)tip
     if(enemies.some(e=>e.conv&&!e.dead&&Math.hypot(e.x-P.x,e.y-P.y)<800))tipShow('convoy');if(WX.kind==='storm')tipShow('storm');if(fogAt(P.x,P.y)>.3||WX.kind==='fog')tipShow('fog');
     if(nearVil>=0)tipShow('village');if(S.story)tipShow('story');if(S.hull<maxHull()*.35)tipShow('hull');if(mor()<30)tipShow('mor');if(S.day>=6)tipShow('map')}
   tipNext()}
+/* ---------- Kanonentürme ---------- */
+let twT=0;
+function towerTick(dt){twT-=dt;if(twT>0)return;twT=.5;
+  for(const p of PORTS){if(!isOwn(p))continue;const m=pm(p),tw=m.tw||0;if(!tw)continue;m._tc=(m._tc||0)-.5;if(m._tc>0)continue;
+    if(Math.hypot(P.x-p.x,P.y-p.y)>1400)continue;
+    let tg=null,bd=430;for(const e of enemies){if(e.dead||e.sink>0)continue;if(!(hostileNat(e.nat)||e.siege||e.rival))continue;const d=Math.hypot(e.x-p.x,e.y-p.y);if(d<bd){bd=d;tg=e}}
+    if(!tg)continue;m._tc=3.2/tw;towerShot(p.x+(rnd()-.5)*30,p.y-10,tg)}}
+function towerShot(x,y,tg){const sp=340,t=Math.hypot(tg.x-x,tg.y-y)/sp,tx=tg.x+Math.cos(tg.h)*tg.v*t,ty=tg.y+Math.sin(tg.h)*tg.v*t,a=Math.atan2(ty-y,tx-x)+(rnd()-.5)*.08;
+  balls.push({x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,l:Math.min(1.6,t+.25),o:'a',d:9,k:'ball'});Snd.cannon({x:x,y:y},'a');for(let k=0;k<5;k++)emit(x,y,Math.cos(a)*25+(rnd()-.5)*25,Math.sin(a)*25+(rnd()-.5)*25,1.4,3,GREY,9,7,4)}
+function drawTowers(g){if(mode==='title'||mode==='battle')return;for(const p of PORTS){if(!isOwn(p))continue;const tw=pm(p).tw||0;if(!tw||!visible(p.x,p.y,120))continue;
+  for(let i=0;i<tw;i++){const x=p.x+(i-(tw-1)/2)*44,y=p.y-18;g.save();g.translate(x,y);g.scale(1,1/TK);g.fillStyle='#8a8478';g.fillRect(-7,-22,14,22);g.fillStyle='#6a655c';g.fillRect(-9,-26,18,5);g.fillStyle='#5a554c';for(let k=-8;k<=6;k+=5)g.fillRect(k,-30,3,4);g.fillStyle='#222';g.fillRect(-2,-16,4,5);g.restore()}}}
+/* ---------- Zufallsbegegnungen ---------- */
+let SEAE=[],encT=40;
+function encTick(dt){if(inBattle||mode!=='play')return;encT-=dt;
+  if(encT<=0&&SEAE.length<2){encT=70+rnd()*60;const k=(WX.kind==='fog'||fogAt(P.x,P.y)>.2)&&rnd()<.6?'ghost':['boat','crate','mut','trader'][Math.floor(rnd()*4)];
+    for(let i=0;i<12;i++){const a=rnd()*TAU,d=520+rnd()*300,x=P.x+Math.cos(a)*d,y=P.y+Math.sin(a)*d;if(x>150&&y>150&&x<W-150&&y<H-150&&inWater(x,y,60)){SEAE.push({k:k,x:x,y:y,life:120,h:rnd()*TAU});break}}}
+  for(let i=SEAE.length-1;i>=0;i--){const e=SEAE[i];e.life-=dt;e.x+=Math.cos(wind.dir)*4*dt;e.y+=Math.sin(wind.dir)*4*dt;if(e.life<=0||!inWater(e.x,e.y,5)){SEAE.splice(i,1);continue}
+    if(!fateOpen&&Math.hypot(P.x-e.x,P.y-e.y)<70){SEAE.splice(i,1);encMeet(e)}}}
+function encMeet(e){P.v*=.4;
+  if(e.k==='boat')showFate('Rettungsboot','Ein Rettungsboot treibt auf dich zu. Darin sitzen fünf erschöpfte Seeleute eines gesunkenen Handelsschiffs.',[
+    {t:'Aufnehmen (+5 Mann)',fn:()=>{const room=CLS[S.cls].maxCrew-S.crew;if(room<=0)return 'Kein Platz an Bord. Du gibst ihnen Wasser und Proviant, sie rudern weiter.';S.crew+=Math.min(5,room);addMor(3);if(rnd()<.2&&!S.off.doc){S.crew=Math.max(3,S.crew-2);return 'Sie heuern an, bringen aber Fieber mit: 2 Mann sterben.'}return 'Die Seeleute heuern dankbar bei dir an.'}},
+    {t:'Zum nächsten Hafen schleppen (Belohnung)',fn:()=>{const g=120+Math.round(rnd()*120);S.gold+=g;repAdd(S.nat,2);return 'Die Reederei zahlt dir später '+g+' Gold Dank.'}}]);
+  else if(e.k==='crate')showFate('Treibende Kiste','Eine versiegelte Kiste schaukelt in den Wellen. Das Siegel trägt ein unbekanntes Wappen.',[
+    {t:'An Bord holen und öffnen',fn:()=>{const r=rnd();if(r<.45){const g=150+Math.round(rnd()*250);S.gold+=g;return 'Goldmünzen! '+g+' Gold.'}if(r<.7){const gd=GOODS[Math.floor(rnd()*4)],n=Math.min(capT()-cargoUsed(),10);if(n>0)S.goods[gd]+=n;return n>0?n+' Fässer '+gd+' in der Kiste.':'Waren, aber dein Laderaum ist voll.'}if(r<.85){dropFrag({t:'f'});return ''}S.crew=Math.max(3,S.crew-1);return 'Eine Falle! Die Kiste explodiert, ein Matrose stirbt.'}},
+    {t:'Liegen lassen',fn:()=>''}]);
+  else if(e.k==='mut')showFate('Meuterer','Ein Beiboot voller Männer winkt dir zu. Sie haben ihren grausamen Kapitän ausgesetzt und wollen bei dir anheuern.',[
+    {t:'Aufnehmen (+6 Mann, Moral -5)',fn:()=>{const room=CLS[S.cls].maxCrew-S.crew;S.crew+=Math.max(0,Math.min(6,room));addMor(-5);return room>0?'Die Meuterer heuern an. Die alte Mannschaft beäugt sie misstrauisch.':'Kein Platz an Bord.'}},
+    {t:'Der Marine ausliefern (200 Gold, Ruf +4)',fn:()=>{S.gold+=200;repAdd(S.nat,4);return 'Die Marine zahlt 200 Gold Kopfgeld.'}},
+    {t:'Weitersegeln',fn:()=>''}]);
+  else if(e.k==='trader')showFate('Händler in Seenot','Ein kleines Handelsschiff hat ein Leck. Der Kapitän bittet um Holz für die Reparatur.',[
+    {t:'3 Holz geben',fn:()=>{if((S.goods.Holz||0)<3){addMor(-2);return 'Du hast kein Holz an Bord. Der Händler sieht dir enttäuscht nach.'}S.goods.Holz-=3;const g=180+Math.round(rnd()*150);S.gold+=g;repAdd(S.nat,2);addMor(4);return 'Der Händler dankt dir mit '+g+' Gold.'}},
+    {t:'Ausplündern (Ruf -8)',fn:()=>{const gd=GOODS[Math.floor(rnd()*4)],n=Math.min(capT()-cargoUsed(),12);if(n>0)S.goods[gd]+=n;for(const nn of NATS4)repAdd(nn,-2);repAdd(S.nat,-6);addMor(2);return 'Du nimmst ihm '+n+' Fässer '+gd+' ab. Das wird sich herumsprechen.'}},
+    {t:'Weitersegeln',fn:()=>''}]);
+  else if(e.k==='ghost')showFate('Geisterschiff','Lautlos gleitet ein zerfetztes Schiff aus dem Nebel. Kein Mensch ist an Deck, doch in der Kajüte flackert Licht.',[
+    {t:'Entern und durchsuchen',fn:()=>{if(rnd()<.55){const g=400+Math.round(rnd()*500);S.gold+=g;S.found++;return 'In der Kajüte steht eine Truhe voller Dublonen: '+g+' Gold! Dann löst sich das Schiff im Nebel auf.'}S.crew=Math.max(3,S.crew-3);addMor(-10);return 'Ein eisiger Wind fegt über das Deck. Drei Männer verschwinden spurlos. Die Mannschaft ist entsetzt.'}},
+    {t:'Schnell wegsegeln',fn:()=>{addMor(-2);return 'Die Männer bekreuzigen sich, als das Schiff im Nebel verschwindet.'}}]);
+}
+function drawEnc(g){if(mode==='title'||inBattle)return;for(const e of SEAE){if(!visible(e.x,e.y,60))continue;const bob=Math.sin(CT*2+e.x)*1.2;
+  if(e.k==='ghost'){g.globalAlpha=.45+.15*Math.sin(CT*1.5);drawShip(g,e.x,e.y+bob,e.h,46,0x55606a,0xb8c4cc,0x9aa4aa,3,{v:0,dmg:.6,noRef:true,sail:.6});g.globalAlpha=1;continue}
+  g.save();g.translate(e.x,e.y+bob);g.rotate(e.h);
+  if(e.k==='crate'){g.fillStyle='rgba(0,40,70,.25)';g.fillRect(-5,-3,12,9);g.fillStyle='#9a6a34';g.fillRect(-6,-6,12,12);g.strokeStyle='#4a3018';g.lineWidth=1;g.strokeRect(-6,-6,12,12);g.beginPath();g.moveTo(-6,-6);g.lineTo(6,6);g.stroke()}
+  else{g.fillStyle='#7a5530';g.beginPath();g.ellipse(0,0,13,5,0,0,TAU);g.fill();g.fillStyle='#a87a44';g.beginPath();g.ellipse(0,0,10,3.4,0,0,TAU);g.fill();g.fillStyle=e.k==='trader'?'#e9e2cc':'#f0d0a8';for(let i=-1;i<=1;i++){g.beginPath();g.arc(i*5,0,1.8,0,TAU);g.fill()}
+    if(e.k==='trader'){g.strokeStyle='#4a2e14';g.lineWidth=1.4;g.beginPath();g.moveTo(0,0);g.lineTo(0,-1);g.stroke()}}
+  g.restore();g.strokeStyle='rgba(255,255,255,.5)';g.lineWidth=.8;g.beginPath();g.arc(e.x,e.y+bob,14+Math.sin(CT*2)*1.5,0,TAU);g.stroke();
+  if(Math.hypot(P.x-e.x,P.y-e.y)<300)txt(g,{boat:'Rettungsboot',crate:'Treibgut',mut:'Beiboot',trader:'Händler in Seenot'}[e.k],e.x,e.y-20,9.5/camK*1.3,'#e8f4ff')}}
 /* ---------- Säbelduell ---------- */
 let DU=null;
 function duelStart(){const e=board.e,def=ET[e.t];
@@ -4188,7 +4239,38 @@ const EN0={
 "Tipp: Die Moral ist niedrig. Eine Runde Rum in der Taverne, Beute oder ein Hafenbesuch helfen.":"Tip: Morale is low. A round of rum in the tavern, loot or a port visit helps.",
 "Tipp: Einer deiner Häfen wird angegriffen! Fahr hin und versenke die Angreifer, sonst entscheidet die Garnison allein.":"Tip: One of your ports is under attack! Sail there and sink the attackers, otherwise the garrison decides alone.",
 "Tipp: Mit dem Knopf ⤢ an der Minikarte öffnest du die große Weltkarte mit Preisen und Zielen.":"Tip: The ⤢ button on the minimap opens the large world map with prices and goals.",
-"Tipp: In der Werft kannst du deinem Schiff einen Namen, eine Segelfarbe und eine Galionsfigur geben.":"Tip: At the shipyard you can give your ship a name, a sail colour and a figurehead."
+"Tipp: In der Werft kannst du deinem Schiff einen Namen, eine Segelfarbe und eine Galionsfigur geben.":"Tip: At the shipyard you can give your ship a name, a sail colour and a figurehead.",
+"Kanonenturm bauen":"Build cannon tower",
+"Türme beschießen feindliche Schiffe vor dem Hafen und in Seeschlachten in der Nähe. Jeder Turm stärkt die Verteidigung, wenn du nicht da bist":"Towers fire at enemy ships off the port and in nearby naval battles. Each tower strengthens the defence when you are away",
+"Kanonenturm gebaut":"Cannon tower built",
+"hat jetzt":"now has",
+"Türme":"towers",
+"Deine Kanonentürme in der Nähe feuern mit":"Your nearby cannon towers join the fight",
+"Nebel: Gegner tauchen erst auf kurze Entfernung auf":"Fog: enemies only appear at close range",
+"Sturm: Deine Kugeln streuen stark. Geh näher heran":"Storm: your shots scatter widely. Get closer",
+"Regen: Nasses Pulver, alle laden langsamer nach":"Rain: wet powder, everyone reloads more slowly",
+"Flaute: Kaum Wind, alle Schiffe sind langsam":"Calm: hardly any wind, all ships are slow",
+"Rettungsboot":"Lifeboat",
+"Ein Rettungsboot treibt auf dich zu. Darin sitzen fünf erschöpfte Seeleute eines gesunkenen Handelsschiffs":"A lifeboat drifts towards you. Five exhausted sailors from a sunken merchant ship sit in it",
+"Aufnehmen (+5 Mann)":"Take aboard (+5 men)",
+"Zum nächsten Hafen schleppen (Belohnung)":"Tow to the nearest port (reward)",
+"Treibende Kiste":"Floating crate",
+"Eine versiegelte Kiste schaukelt in den Wellen. Das Siegel trägt ein unbekanntes Wappen":"A sealed crate bobs in the waves. The seal bears an unknown coat of arms",
+"An Bord holen und öffnen":"Bring aboard and open",
+"Liegen lassen":"Leave it",
+"Treibgut":"Flotsam",
+"Beiboot":"Longboat",
+"Meuterer":"Mutineers",
+"Ein Beiboot voller Männer winkt dir zu. Sie haben ihren grausamen Kapitän ausgesetzt und wollen bei dir anheuern":"A longboat full of men waves to you. They marooned their cruel captain and want to sign on with you",
+"Aufnehmen (+6 Mann, Moral -5)":"Take aboard (+6 men, morale -5)",
+"Der Marine ausliefern (200 Gold, Ruf +4)":"Hand over to the navy (200 gold, reputation +4)",
+"Ein kleines Handelsschiff hat ein Leck. Der Kapitän bittet um Holz für die Reparatur":"A small merchant ship has a leak. The captain asks for wood for repairs",
+"3 Holz geben":"Give 3 wood",
+"Ausplündern (Ruf -8)":"Plunder it (reputation -8)",
+"Geisterschiff":"Ghost ship",
+"Lautlos gleitet ein zerfetztes Schiff aus dem Nebel. Kein Mensch ist an Deck, doch in der Kajüte flackert Licht":"Silently a tattered ship glides out of the fog. No one is on deck, but a light flickers in the cabin",
+"Entern und durchsuchen":"Board and search",
+"Schnell wegsegeln":"Sail away quickly"
 };
 const ENK=Object.keys(EN0).sort((a,b)=>b.length-a.length);
 const ENRE=new RegExp('(?<![A-Za-zÄÖÜäöüß])(?:'+ENK.map(k=>k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')(?![A-Za-zÄÖÜäöüß])','g'),ENC=new Map();
