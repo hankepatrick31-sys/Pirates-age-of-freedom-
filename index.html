@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#071b2a">
+<title>PIRATES! — Age of Freedom</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Crimson+Text:wght@400;600;700&display=swap');
+:root{--gold:#e6bd62;--gold2:#ffdf91;--ink:#091722;--wood:#24170f;--paper:#ead8ad;--muted:#b9c8c9}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#061724;color:#f6e8c8;font-family:'Crimson Text',serif;touch-action:none}
+#game{position:fixed;inset:0;z-index:0}canvas{display:block}
+#shade{position:fixed;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at 50% 45%,transparent 35%,#03101a66 100%),linear-gradient(180deg,#06152255,transparent 35%,#06152244)}
+.topbar{position:fixed;z-index:3;top:12px;left:12px;right:12px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;pointer-events:none}
+.panel{pointer-events:auto;background:linear-gradient(145deg,#182a32eF,#0a1823f2);border:1px solid #d4ad5b99;box-shadow:0 8px 28px #0008,inset 0 1px #ffffff16;border-radius:12px;backdrop-filter:blur(12px)}
+.brand{padding:10px 15px;min-width:170px}.eyebrow{font:10px Cinzel;letter-spacing:.22em;color:var(--gold)}.brand strong{display:block;font:700 20px Cinzel;letter-spacing:.08em;color:#fff0ca}
+.stats{display:flex;gap:15px;padding:10px 14px;flex-wrap:wrap}.stat small{display:block;color:#9eb1b5;font:10px Cinzel;letter-spacing:.08em}.stat b{font:600 17px Cinzel;color:#ffe2a0}
+.actions{display:flex;gap:7px;pointer-events:auto}.btn{border:1px solid #d8b76d;background:linear-gradient(#60452c,#2c1c12);color:#ffdfa0;border-radius:8px;padding:9px 12px;font:600 11px Cinzel;letter-spacing:.04em;box-shadow:0 3px 9px #0007;cursor:pointer}.btn:active{transform:translateY(1px)}.btn.primary{background:linear-gradient(#a77938,#634019)}.btn.danger{border-color:#c77b68;background:linear-gradient(#813b2e,#421b18)}
+#bottom{position:fixed;z-index:3;left:14px;right:14px;bottom:14px;display:flex;justify-content:space-between;align-items:end;pointer-events:none}
+#hint{padding:9px 13px;color:#d7e2df;font-size:14px;max-width:48%;background:#071923b8;border:1px solid #d2b66b55;border-radius:9px;backdrop-filter:blur(8px)}
+#sailing{display:flex;gap:7px;pointer-events:auto}.control{width:54px;height:54px;border-radius:50%;border:1px solid #e1bd6d;background:#101f2dcc;color:#ffe2a0;font:700 20px Cinzel;box-shadow:0 4px 14px #0008;touch-action:none}
+#joystick{display:flex;gap:7px;pointer-events:auto}.control.wide{width:auto;min-width:65px;border-radius:12px;padding:0 12px;font:600 11px Cinzel}
+#overlay{position:fixed;z-index:10;inset:0;display:grid;place-items:center;padding:18px;background:linear-gradient(#03101ac9,#061522df),url('') center/cover}
+.dialog{width:min(620px,100%);max-height:92vh;overflow:auto;padding:clamp(20px,5vw,38px);background:radial-gradient(ellipse at top,#f4e4bf,#d6bd8a);color:#24180e;border:5px solid #382316;border-radius:15px;box-shadow:0 20px 70px #000b,inset 0 0 0 2px #b18b4e}
+.dialog .eyebrow{color:#785020}.dialog h1{font:800 clamp(34px,8vw,58px) Cinzel;line-height:1;margin:9px 0;color:#2b1b10;text-shadow:0 2px #fff7}.dialog p{font-size:18px;line-height:1.35}.field{display:grid;gap:6px;margin:18px 0}.field label{font:700 12px Cinzel}.field input,.field select{padding:12px;border:1px solid #8c6b3c;border-radius:7px;background:#fff8e8;color:#2b1b10;font:600 16px 'Crimson Text'}
+#overlay .btn{font-size:13px;padding:13px 18px}.footnote{font-size:13px!important;color:#654b2a}
+#mapModal,#logModal{position:fixed;z-index:8;inset:0;display:none;place-items:center;padding:18px;background:#020a10c9}.modalbox{width:min(680px,100%);padding:22px;color:#ead8ad}.modalbox h2{font:700 22px Cinzel;color:#ffdf91;margin:0 0 12px}.mapgrid{height:280px;border:1px solid #c9a85f77;border-radius:9px;position:relative;overflow:hidden;background:radial-gradient(ellipse,#1b6976,#0a3447 65%,#092433)}.island{position:absolute;background:#9c9660;border-radius:48% 52% 43% 57%;box-shadow:inset -9px -6px #5d6946}.island.one{width:90px;height:55px;left:22%;top:35%;transform:rotate(-20deg)}.island.two{width:65px;height:40px;right:20%;top:20%;transform:rotate(30deg)}.mapship{position:absolute;left:50%;top:55%;font-size:25px;filter:drop-shadow(0 2px 2px #000)}
+.toast{position:fixed;z-index:5;top:100px;left:50%;transform:translateX(-50%);padding:10px 18px;border:1px solid #e4bf69;background:#0b1b27eF;border-radius:9px;font:600 13px Cinzel;color:#ffe4a2;opacity:0;transition:opacity .25s;pointer-events:none}.toast.show{opacity:1}
+@media(max-width:700px){.topbar{top:7px;left:7px;right:7px;flex-wrap:wrap}.brand{padding:7px 10px;min-width:0}.brand strong{font-size:15px}.stats{gap:9px;padding:7px 9px;flex:1}.stat small{font-size:8px}.stat b{font-size:13px}.actions{width:100%;justify-content:flex-end}.btn{padding:7px 9px;font-size:9px}#bottom{left:8px;right:8px;bottom:9px}#hint{font-size:12px;max-width:42%;padding:7px 9px}.control{width:47px;height:47px}.control.wide{min-width:54px;padding:0 8px;font-size:9px}}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="game"></div><div id="shade"></div>
+<div class="topbar" id="hud" style="display:none">
+  <div class="panel brand"><span class="eyebrow">KARIBIK · 1660</span><strong>PIRATES!</strong><span id="captainLabel">Kapitän Morgan</span></div>
+  <div class="panel stats">
+    <div class="stat"><small>DUBLONEN</small><b id="gold">500</b></div>
+    <div class="stat"><small>CREW</small><b id="crew">40 / 60</b></div>
+    <div class="stat"><small>RUMPF</small><b id="hull">100%</b></div>
+    <div class="stat"><small>SEGEL</small><b id="sail">55%</b></div>
+  </div>
+  <div class="actions">
+    <button class="btn" id="mapBtn">✦ Seekarte</button><button class="btn" id="logBtn">Logbuch</button><button class="btn" id="soundBtn">♫ Ton</button>
+  </div>
+</div>
+<div id="bottom" style="display:none">
+  <div id="hint">WASD / Pfeile: steuern · Leertaste: Kanone</div>
+  <div id="joystick"><button class="control" data-key="KeyA">◀</button><button class="control" data-key="KeyD">▶</button></div>
+  <div id="sailing"><button class="control wide" data-key="KeyS">SEGEL −</button><button class="control wide" data-key="KeyW">SEGEL +</button><button class="control wide" id="fireBtn">KANONE</button></div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="overlay">
+ <div class="dialog">
+  <div class="eyebrow">ANNO DOMINI 1660 · DIE NEUE WELT</div>
+  <h1>PIRATES!<br><span style="font-size:.52em;letter-spacing:.14em">AGE OF FREEDOM</span></h1>
+  <p>Die Karibik liegt vor dir. Zwischen goldenen Handelsrouten, tropischen Inseln und den Kanonen der Imperien wartet dein eigenes Kapitel der Piratengeschichte.</p>
+  <div class="field"><label for="captain">NAME DES KAPITÄNS</label><input id="captain" maxlength="22" value="Henry Morgan"></div>
+  <div class="field"><label for="nation">HEIMATNATION</label><select id="nation"><option>England</option><option>Frankreich</option><option>Spanien</option><option>Niederlande</option></select></div>
+  <button class="btn primary" id="startBtn" style="width:100%">REISE BEGINNEN →</button>
+  <p class="footnote">Spielbarer 3D-Prototyp · Touch- und Tastatursteuerung · Spielstand wird lokal gespeichert.</p>
+ </div>
+</div>
+<div id="mapModal"><div class="panel modalbox"><h2>SEEKARTE DER KARIBIK</h2><div class="mapgrid"><div class="island one"></div><div class="island two"></div><div class="mapship">⛵</div></div><p>Port Royal liegt westlich deiner Position. Halte Kurs auf die Inseln und entdecke neue Gewässer.</p><button class="btn" id="closeMap">KARTE SCHLIESSEN</button></div></div>
+<div id="logModal"><div class="panel modalbox"><h2>KAPITÄNSLOGBUCH</h2><p id="logText">Dein Abenteuer beginnt heute. Die Mannschaft erwartet Befehle.</p><p>Ruf: <b>Unbekannter Freibeuter</b><br>Schiff: <b>Die Seewolf</b><br>Heimathafen: <b>Port Royal</b></p><button class="btn" id="closeLog">LOGBUCH SCHLIESSEN</button></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+<script>
+(()=> {
+'use strict';
+const $=id=>document.getElementById(id);
+let scene,camera,renderer,ship,water,clock,keys={},running=false,muted=false;
+let gold=500,crew=40,hull=100,sail=55,speed=0,heading=0,shots=0,toastTimer;
+const islands=[],cannonballs=[];
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2300)}
+function updateHUD(){ $('gold').textContent=gold.toLocaleString('de-DE');$('crew').textContent=crew+' / 60';$('hull').textContent=Math.round(hull)+'%';$('sail').textContent=sail+'%';}
+function makeMat(color,rough=.8){return new THREE.MeshStandardMaterial({color,roughness:rough})}
+function init3D(){
+ scene=new THREE.Scene();scene.background=new THREE.Color(0x8bc4d1);scene.fog=new THREE.FogExp2(0x8bc4d1,.0019);
+ camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,.1,1800);camera.position.set(0,18,34);
+ renderer=new THREE.WebGLRenderer({antialias:innerWidth>700,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.12;$('game').appendChild(renderer.domElement);
+ scene.add(new THREE.HemisphereLight(0xc8eaff,0x405044,2.0));
+ const sun=new THREE.DirectionalLight(0xffe3b0,3.0);sun.position.set(-80,120,60);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);scene.add(sun);
+ // Ocean shader: layered moving waves with a sunlit crest.
+ const geo=new THREE.PlaneGeometry(1800,1800,180,180);geo.rotateX(-Math.PI/2);
+ const pos=geo.attributes.position;for(let i=0;i<pos.count;i++){const x=pos.getX(i),z=pos.getZ(i);pos.setY(i,Math.sin(x*.035)*.18+Math.cos(z*.027)*.16);}
+ geo.computeVertexNormals();
+ const oceanMat=new THREE.MeshStandardMaterial({color:0x087c91,roughness:.34,metalness:.12,flatShading:false});
+ water=new THREE.Mesh(geo,oceanMat);water.receiveShadow=true;scene.add(water);
+ // Distant atmospheric islands
+ makeIsland(-100,-105,30);makeIsland(110,-165,42);makeIsland(155,55,27);makeIsland(-175,125,36);makeIsland(15,-260,50);
+ ship=makeShip();scene.add(ship);ship.position.set(0,0,0);
+ // Decorative seabirds
+ for(let i=0;i<14;i++){const bird=new THREE.Group();const m=makeMat(0xf3eee0);const a=new THREE.Mesh(new THREE.BoxGeometry(1.2,.08,.12),m);a.rotation.z=.18;const b=a.clone();b.rotation.z=-.18;bird.add(a,b);bird.position.set((Math.random()-.5)*360,18+Math.random()*20,(Math.random()-.5)*360);scene.add(bird);}
+ clock=new THREE.Clock();window.addEventListener('resize',resize);animate();
+}
+function makeIsland(x,z,r){
+ const g=new THREE.Group();const sand=new THREE.Mesh(new THREE.CylinderGeometry(r*.8,r,r*.22,32),makeMat(0xd0b77b));sand.position.y=-.05;sand.receiveShadow=true;g.add(sand);
+ const green=new THREE.Mesh(new THREE.ConeGeometry(r*.83,r*.48,32),makeMat(0x456c43));green.position.y=r*.24;green.scale.set(1,.75,1);green.castShadow=true;g.add(green);
+ for(let i=0;i<9;i++){const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.18,.28,3,6),makeMat(0x76502d));const crown=new THREE.Mesh(new THREE.SphereGeometry(2.1,7,6),makeMat(i%2?0x326447:0x477c4b));const px=(Math.random()-.5)*r*1.15,pz=(Math.random()-.5)*r*1.15;trunk.position.set(px,2,pz);crown.position.set(px,4.1,pz);g.add(trunk,crown);}
+ g.position.set(x,0,z);scene.add(g);islands.push(g);
+}
+function makeShip(){
+ const g=new THREE.Group(),wood=makeMat(0x56331c),dark=makeMat(0x24170f),canvas=makeMat(0xe6d9b9),goldmat=makeMat(0xc59a42,.5);
+ const hullMesh=new THREE.Mesh(new THREE.CylinderGeometry(1.1,2.4,15,8,1,false),wood);hullMesh.rotation.z=Math.PI/2;hullMesh.scale.set(1,1,.72);hullMesh.position.y=1.1;hullMesh.castShadow=true;g.add(hullMesh);
+ const deck=new THREE.Mesh(new THREE.BoxGeometry(12,.55,3.3),makeMat(0x8a5a31));deck.position.y=2.25;deck.castShadow=true;g.add(deck);
+ // Raised bow and stern
+ for(const [x,y] of [[-6,2.7],[5.2,3.1]]){const block=new THREE.Mesh(new THREE.BoxGeometry(2.8,1.4,3),wood);block.position.set(x,y,0);g.add(block);}
+ const mastXs=[-2.8,.8,3.5],heights=[10,13,9];
+ mastXs.forEach((x,i)=>{const h=heights[i];const mast=new THREE.Mesh(new THREE.CylinderGeometry(.16,.25,h,8),dark);mast.position.set(x,2.7+h/2,0);mast.castShadow=true;g.add(mast);
+ const yard=new THREE.Mesh(new THREE.CylinderGeometry(.09,.09,7-i*.5,8),dark);yard.rotation.z=Math.PI/2;yard.position.set(x,2.7+h*.68,0);g.add(yard);
+ const sailMesh=new THREE.Mesh(new THREE.PlaneGeometry(5.8-i*.3,h*.48,1,1),canvas);sailMesh.position.set(x,2.7+h*.42,.12);sailMesh.castShadow=true;g.add(sailMesh);
+ const flag=new THREE.Mesh(new THREE.PlaneGeometry(2,.8),makeMat(0x211b19));flag.position.set(x,2.7+h+.5,0);g.add(flag);
+ });
+ const bow=new THREE.Mesh(new THREE.ConeGeometry(.7,3,8),goldmat);bow.rotation.z=-Math.PI/2;bow.position.set(-8,2.2,0);g.add(bow);
+ // gun ports
+ for(let i=0;i<5;i++){for(const side of [-1,1]){const gun=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,.55,8),dark);gun.rotation.x=Math.PI/2;gun.position.set(-4+i*2,1.9,side*1.65);g.add(gun);}}
+ return g;
+}
+function fire(){
+ if(!running)return;if(gold<0)return;shots++;
+ const ball=new THREE.Mesh(new THREE.SphereGeometry(.34,10,10),makeMat(0x17191b));const dir=new THREE.Vector3(-Math.cos(heading),.08,Math.sin(heading));ball.position.copy(ship.position).add(new THREE.Vector3(dir.x*8,2,dir.z*8));ball.userData.velocity=dir.multiplyScalar(1.5);ball.userData.life=100;scene.add(ball);cannonballs.push(ball);
+ toast('KANONENSCHUSS! · Salve abgefeuert');$('logText').textContent='Du hast eine Kanonensalve abgefeuert. Insgesamt: '+shots+' Schüsse.';
+}
+function animate(){
+ requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04),t=clock.elapsedTime;
+ if(running){
+  if(keys.KeyA||keys.ArrowLeft)heading+=dt*.72;if(keys.KeyD||keys.ArrowRight)heading-=dt*.72;
+  if(keys.KeyW||keys.ArrowUp)sail=Math.min(100,sail+dt*24);if(keys.KeyS||keys.ArrowDown)sail=Math.max(0,sail-dt*24);
+  const target=(sail/100)*.24;speed+=(target-speed)*dt*.7;
+  // Der Bug zeigt lokal nach -X -> Fahrtrichtung entsprechend
+  ship.position.x-=Math.cos(heading)*speed*dt*13;ship.position.z+=Math.sin(heading)*speed*dt*13;
+  ship.rotation.y=heading;ship.position.y=Math.sin(t*1.7)*.22;ship.rotation.z=Math.sin(t*1.2)*.018;
+  const desired=new THREE.Vector3(ship.position.x+Math.cos(heading)*23,17,ship.position.z-Math.sin(heading)*23);
+  camera.position.lerp(desired,1-Math.pow(.001,dt));camera.lookAt(ship.position.x,2,ship.position.z);
+  if(Math.random()<.0009){gold+=25;updateHUD();toast('Treibgut geborgen: +25 Dublonen');}
+  $('sail').textContent=Math.round(sail)+'%';
+ }
+ // Subtle ocean animation
+ const p=water.geometry.attributes.position;for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);p.setY(i,Math.sin(x*.035+t*1.3)*.18+Math.cos(z*.027+t)*.16);}p.needsUpdate=true;water.geometry.computeVertexNormals();
+ for(let i=cannonballs.length-1;i>=0;i--){const b=cannonballs[i];b.userData.velocity.y-=.012;b.position.add(b.userData.velocity);b.userData.life--;if(b.userData.life<0||b.position.y<0){scene.remove(b);cannonballs.splice(i,1);}}
+ renderer.render(scene,camera);
+}
+function resize(){if(!camera||!renderer)return;camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));}
+function start(){
+ const name=$('captain').value.trim()||'Henry Morgan';$('captainLabel').textContent='Kapitän '+name;$('overlay').classList.add('hidden');$('hud').style.display='flex';$('bottom').style.display='flex';running=true;toast('Willkommen in der Karibik, Kapitän '+name+'!');save();
+}
+function save(){try{localStorage.setItem('pirates-age-of-freedom',JSON.stringify({gold,crew,hull,sail,captain:$('captain').value,nation:$('nation').value}));}catch(e){}}
+function load(){try{const s=JSON.parse(localStorage.getItem('pirates-age-of-freedom'));if(s){gold=s.gold??gold;crew=s.crew??crew;hull=s.hull??hull;sail=s.sail??sail;$('captain').value=s.captain||'Henry Morgan';$('nation').value=s.nation||'England';updateHUD();}}catch(e){}}
+$('startBtn').addEventListener('click',start);
+$('mapBtn').addEventListener('click',()=>$('mapModal').style.display='grid');$('closeMap').addEventListener('click',()=>$('mapModal').style.display='none');
+$('logBtn').addEventListener('click',()=>$('logModal').style.display='grid');$('closeLog').addEventListener('click',()=>$('logModal').style.display='none');
+$('fireBtn').addEventListener('click',fire);
+$('soundBtn').addEventListener('click',()=>{muted=!muted;$('soundBtn').textContent=muted?'♪ Aus':'♫ Ton';toast(muted?'Ton stummgeschaltet':'Tonsteuerung aktiviert');});
+document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='Space'){e.preventDefault();fire();}if(e.code==='KeyM')$('mapModal').style.display='grid';if(e.code==='Escape'){$('mapModal').style.display='none';$('logModal').style.display='none';}});
+document.addEventListener('keyup',e=>keys[e.code]=false);
+document.querySelectorAll('[data-key]').forEach(btn=>{const k=btn.dataset.key;btn.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=true;btn.setPointerCapture(e.pointerId)});['pointerup','pointercancel','lostpointercapture'].forEach(ev=>btn.addEventListener(ev,()=>keys[k]=false));});
+window.addEventListener('blur',()=>keys={});
+setInterval(()=>{if(running)save()},5000);
+load();init3D();updateHUD();
+})();
+</script>
+</body>
+</html>
