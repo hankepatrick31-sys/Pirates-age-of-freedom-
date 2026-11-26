@@ -1,7 +1,7 @@
 {
-  "name": "Pirates: Age of Freedom",
-  "short_name": "Pirates AoF",
-  "description": "Piratenspiel in der Karibik in 2.5D-Ansicht",
+  "name": "Sails of Liberty",
+  "short_name": "Sails of Liberty",
+  "description": "Segelabenteuer in der Karibik: handeln, kämpfen, Schätze finden",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
