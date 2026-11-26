@@ -82,20 +82,24 @@ await check('Handel: kein Gewinn durch Kaufen und sofort Zurückverkaufen (alle 
 
 await check('Festung: "Angriff befehlen" hat Vorrang vor einem nahen Hafen', async () => {
   await ev(`(()=>{const p=PORTS.find(q=>!portHostile(q)&&reach(q));S.story={ch:10,fx:p.x,fy:p.y+40,used:[],side:'frei',cons:[]};P.x=p.x;P.y=p.y+30;P.v=0;P.sail=0})()`);
-  await wait(1200);
-  const t = await ev(`$('ctx').hidden?'(versteckt)':$('ctx').textContent`);
+  // Der Knopf wird im Spieltakt aktualisiert; auf langsamen Rechnern kann das dauern
+  await page.waitForFunction(`__ev("$('ctx').hidden?'':$('ctx').textContent")==='Angriff befehlen'`, null, { timeout: 15000, polling: 250 }).catch(() => {});
+  const t = await ev(`$('ctx').hidden?'(versteckt, Modus '+mode+')':$('ctx').textContent`);
   expect(t === 'Angriff befehlen', 'Knopf zeigt: ' + t);
   const marked = await ev(`(()=>{S.story.ch=11;return typeof drawMarkers==='function'})()`);
   expect(marked, 'drawMarkers fehlt');
 });
 
 await check('Kampagne: Kapitel 9 geht nach Neuladen weiter (Akt III, dann Kapitel 10)', async () => {
-  await ev(`(()=>{S.story={ch:9,fx:P.x+3000,fy:P.y,used:[],side:'frei',cons:[]};save()})()`);
+  // Aufs offene Meer, weit weg von Häfen (sonst startet das Spiel nach dem Laden im Hafen-Menü)
+  await ev(`(()=>{let w=null;for(let i=0;i<500;i++){const c=randWater();if(PORTS.every(p=>Math.hypot(p.x-c.x,p.y-c.y)>900)){w=c;break}}if(w){P.x=w.x;P.y=w.y}P.v=0;S.story={ch:9,fx:P.x+3000,fy:P.y,used:[],side:'frei',cons:[]};save()})()`);
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('#btnContinue:not([hidden])', { timeout: 15000 });
   await wait(600);
   await page.click('#btnContinue');
-  await page.waitForFunction('__ev("mode")==="play"', null, { timeout: 30000, polling: 250 });
+  await page.waitForFunction('!["title","dead"].includes(__ev("mode"))', null, { timeout: 30000, polling: 250 });
+  await ev(`(()=>{if(mode!=='play'&&typeof closePanel==='function'){try{closePanel()}catch(e){}}})()`);
+  await page.waitForFunction('__ev("mode")==="play"', null, { timeout: 15000, polling: 250 }).catch(async () => { throw new Error('Spielmodus nach Laden: ' + await ev('mode')); });
   await page.waitForFunction('__ev("!!CUT")', null, { timeout: 8000, polling: 250 }).catch(() => {});
   const h = await ev('CUT&&CUT.pages[0].h');
   expect(h === 'Akt III: Die Schwarze Flagge', 'Akt III startet nicht, Zwischensequenz: ' + h);
