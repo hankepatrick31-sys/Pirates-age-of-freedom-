@@ -35,6 +35,9 @@ jobs:
       - name: Spiel laden, neue Fahrt, Seeschlacht (keine JS-Fehler)
         run: node tests/smoke.cjs
 
+      - name: Regressionstests (Kampagne, Handel, Freibeuter, Festung, 3D)
+        run: node tests/regression.cjs
+
       - name: Bildschirmfoto hochladen
         if: always()
         uses: actions/upload-artifact@v4
