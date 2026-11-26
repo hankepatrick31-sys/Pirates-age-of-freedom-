@@ -1,8 +1,10 @@
-PIRATES: AGE OF FREEDOM: Installation auf Android
-=========================================
+SAILS OF LIBERTY: Installation auf Android
+==========================================
 
 Der Ordner enthält das Spiel als installierbare Web-App (PWA):
-  index.html, manifest.webmanifest, sw.js, icon-192.png, icon-512.png, icon-maskable-512.png
+  index.html, manifest.webmanifest, sw.js, icon-192.png, icon-512.png, icon-maskable-512.png,
+  three.min.js (für die 3D-Ansicht) sowie die Lizenztexte SCHRIFTEN-LIZENZ.txt und LIZENZ-THREEJS.txt.
+  Bitte immer alle Dateien zusammen hochladen.
 
 Eine Web-App läuft nur, wenn sie über eine https-Adresse geladen wird (nicht aus dem Dateimanager).
 
