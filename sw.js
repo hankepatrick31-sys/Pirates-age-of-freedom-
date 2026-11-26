@@ -1,4 +1,4 @@
-const CACHE='karibik-korsar-v82';
+const CACHE='karibik-korsar-v86';
 const FONTS='kk-fonts-v1';
 const FILES=['./','./index.html','./manifest.webmanifest','./icon-192.png','./icon-512.png','./icon-maskable-512.png','./three.min.js'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
