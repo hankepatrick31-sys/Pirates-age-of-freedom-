@@ -736,7 +736,7 @@ function atkLabel(ab,e){const n=e.nat,st=hostileNat(n)||(S.wars&&S.wars[n])||e.s
   ab.classList.toggle('peace',st==='p')}
 function legalTarget(n){return hostileNat(n)||questTarget(n)||lmOK(n)}
 /* Gegner der Hauptgeschichte darf man immer angreifen, auch als Freibeuter (sonst Krieg mit den Piraten) */
-function legalShip(e){return !!(e&&e.story)||legalTarget(e.nat)}
+function legalShip(e){return !!(e&&(e.story||legHos(e)))||legalTarget(e.nat)}
 const SELLM_FREE=()=>(typeof curPort!=='undefined'&&curPort&&curPort.n==='Port Liberté'?1.06:1);
 const BUYM=()=>Math.max(SELLM()*1.04,BUYM_RAW()),BUYM_RAW=()=>(typeof curPort!=='undefined'&&curPort&&curPort.n==='Port Liberté'?.92:1)*(typeof S!=='undefined'&&S&&S.ttl>=4?.95:1)*(S.nat==='nl'?1:1.06)*(curPort?repBuy(curPort.f):1)*(bioIs(0)?.97:1),SELLM=()=>SELLM_FREE()*(S.nat==='nl'?1:0.94)*(bioIs(0)?1.03:1);
 const BASECAP=CLS.map(c=>c.cap),BASESPD=CLS.map(c=>c.spd);
@@ -788,18 +788,31 @@ const DM0=()=>DIFFS[(typeof S!=='undefined'&&S&&S.diff)||'normal']||DIFFS.normal
 function lvF(){try{if(!S)return 1;return (1+Math.min(.45,(S.sunk*2+Math.floor(S.gold/400)+S.found*3+PORTS.filter(isOwn).length*15)/340))*(1+.2*(S.ngp||0))}catch(e){return 1}}
 const DM=()=>{const b=DM0(),k=lvF();return{h:b.h*k,d:b.d*(1+(k-1)*.5),r:b.r/(1+(k-1)*.25),n:b.n}};
 function mkShip(t,nat,x,y,h,extra){const def=ET[t];return Object.assign({t:t,nat:nat,x:x,y:y,h:h,v:30,hull:def.hull*DM().h,mh:def.hull*DM().h,rl:[rnd()*2,rnd()*2],wp:null,alert:0,sink:0,dead:false},extra)}
-function spawnFleet(){
-  const pool=['esp','eng','nl','fr'].filter(n=>n!==S.nat),nat=pool[Math.floor(rnd()*pool.length)];
-  const own=PORTS.filter(p=>p.f===nat),src=own.length?own[Math.floor(rnd()*own.length)]:PORTS[Math.floor(rnd()*PORTS.length)];
-  let dst=PORTS[Math.floor(rnd()*PORTS.length)];if(dst===src)dst=PORTS[(PORTS.indexOf(src)+1)%PORTS.length];
+/* Schatzflotte mit Vorankündigung: Gerücht in der Taverne nennt Route und Abfahrtstag */
+function flPlanMake(){const pool=['esp','eng','nl','fr'].filter(n=>n!==S.nat),nat=pool[Math.floor(rnd()*pool.length)];
+  const own=PORTS.filter(p=>p.f===nat&&reach(p)),src=own.length?own[Math.floor(rnd()*own.length)]:PORTS[Math.floor(rnd()*PORTS.length)];
+  const far=PORTS.filter(p=>p!==src&&reach(p)&&Math.hypot(p.x-src.x,p.y-src.y)>1100);const dst=far.length?far[Math.floor(rnd()*far.length)]:PORTS[(PORTS.indexOf(src)+1)%PORTS.length];
+  return{nat:nat,src:src.n,dst:dst.n,kind:rnd()<.5?'Silber':'Gold',day:S.day+3+Math.floor(rnd()*2),known:0}}
+function flTick(){if(!S||inBattle)return;if(S.flNext===undefined)S.flNext=S.day+8;
+  const act=enemies.some(e=>e.t==='f'&&!e.dead&&e.sink===0);
+  if(!S.flp&&!act&&S.day>=S.flNext){S.flp=flPlanMake();if(mode==='play')toast('In den Tavernen erzählt man sich von einer '+(S.flp.kind==='Gold'?'Goldflotte':'Silberflotte')+', die bald ausläuft. Frag den Wirt nach Route und Abfahrtstag.')}
+  if(S.flp&&S.day>=S.flp.day&&mode==='play'){const pl=S.flp;S.flp=null;S.flNext=S.day+17+Math.floor(rnd()*10);spawnFleet(pl)}}
+function flInfo(f){return (f.kind==='Gold'?'Goldflotte':'Silberflotte')+' von '+NAT[f.nat].n+': '+f.src+' nach '+f.dst+', Abfahrt am Tag '+f.day}
+function flRoute(){if(S.flp&&S.flp.known){const a=portByName(S.flp.src),b=portByName(S.flp.dst);if(a&&b)return{a:a,b:b,t:'Schatzflotte · Tag '+S.flp.day}}
+  const L=enemies.find(e=>e.t==='f'&&e.route&&!e.dead&&e.sink===0);if(L){const a=portByName(L.route[0]),b=portByName(L.route[1]);if(a&&b)return{a:a,b:b,t:'Schatzflotte unterwegs'}}return null}
+function spawnFleet(pl){
+  const pool=['esp','eng','nl','fr'].filter(n=>n!==S.nat),nat=pl?pl.nat:pool[Math.floor(rnd()*pool.length)];
+  const own=PORTS.filter(p=>p.f===nat),src=(pl&&portByName(pl.src))||(own.length?own[Math.floor(rnd()*own.length)]:PORTS[Math.floor(rnd()*PORTS.length)]);
+  let dst=(pl&&portByName(pl.dst))||PORTS[Math.floor(rnd()*PORTS.length)];if(dst===src)dst=PORTS[(PORTS.indexOf(src)+1)%PORTS.length];
   const sx=src.x,sy=src.y+100,dest={x:dst.x,y:dst.y+110},h=Math.atan2(dest.y-sy,dest.x-sx),c=Math.cos(h),sn=Math.sin(h);
-  const kind=rnd()<.5?'Silber':'Gold',kind2=rnd()<.5?'Silber':'Gold',id=++fleetId;
-  const lead=mkShip('f',nat,sx,sy,h,{fleet:id,cargo:kind,dest:dest,life:260});
+  const kind=pl?pl.kind:rnd()<.5?'Silber':'Gold',kind2=rnd()<.5?'Silber':'Gold',id=++fleetId;
+  const lead=mkShip('f',nat,sx,sy,h,{fleet:id,cargo:kind,dest:dest,life:260,route:[src.n,dst.n]});
   const gal=mkShip('f',nat,sx-sn*60,sy+c*60,h,{fleet:id,cargo:kind2,lead:lead,off:{x:-c*45-sn*60,y:-sn*45+c*60}});
   const e1=mkShip('p',nat,sx+sn*60,sy-c*60,h,{fleet:id,lead:lead,off:{x:-c*20+sn*70,y:-sn*20-c*70}});
   const e2=mkShip('p',nat,sx-c*70,sy-sn*70,h,{fleet:id,lead:lead,off:{x:-c*80,y:-sn*80}});
-  enemies.push(lead,gal,e1,e2);
-  toast((kind==='Gold'?'Goldflotte':'Silberflotte')+' von '+NAT[nat].n+': '+src.n+' nach '+dst.n+'. Auf der Karte markiert.');
+  const e3=mkShip('w',nat,sx+c*70,sy+sn*70,h,{fleet:id,lead:lead,off:{x:c*70,y:sn*70}});
+  enemies.push(lead,gal,e1,e2,e3);
+  toast((kind==='Gold'?'Goldflotte':'Silberflotte')+' von '+NAT[nat].n+': '+src.n+' nach '+dst.n+'. Jedes Schatzschiff bringt über 10.000 Gold, doch ein Kriegsschiff begleitet sie. Auf der Karte markiert.');
 }
 function dropTreasure(e){
   const kind=e.cargo||'Silber';let n=kind==='Gold'?5+Math.floor(rnd()*4):8+Math.floor(rnd()*5);
@@ -1088,7 +1101,7 @@ function offersFor(p,salt){
   const foes=nats.filter(n=>n!==gf&&(gf==='pir'||atWar(gf,n))),mk=[];
   if(foes.length)mk.push(()=>{const tn=foes[Math.floor(r()*foes.length)],goal=2+Math.floor(r()*3);return{type:'marque',title:'Kaperbrief gegen '+NAT[tn].n,desc:'Versenke '+goal+' Schiffe unter der Flagge von '+NAT[tn].n+'. Mit dem Brief darfst du sie ohne Strafe angreifen.',goal:goal,tn:tn,reward:260*goal,due:S.day+20}});
   if(gf!=='pir'&&S.nat!=='pir')mk.push(()=>{const goal=2+Math.floor(r()*2);return{type:'pirate',title:'Piratenjagd',desc:'Versenke '+goal+' Piratenschiffe.',goal:goal,reward:230*goal,due:S.day+15}});
-  mk.push(()=>({type:'fleet',title:'Schatzgaleone kapern',desc:'Versenke eine Schatzgaleone der Silber- oder Goldflotte.',goal:1,reward:900,due:S.day+25}));
+  mk.push(()=>({type:'fleet',title:'Schatzgaleone kapern',desc:'Versenke eine Schatzgaleone der Silber- oder Goldflotte.',goal:1,reward:900,due:S.day+45}));
   mk.push(()=>{const others=PORTS.filter(q=>q!==p&&!portHostile(q)&&reach(q)),t=others[Math.floor(r()*others.length)],g=GOODS[Math.floor(r()*4)],n=8+Math.floor(r()*8);return{type:'deliver',title:'Lieferung nach '+t.n,desc:'Bringe '+n+' '+g+' ins Rathaus von '+t.n+'.',tport:t.n,good:g,n:n,reward:Math.round(BASE[g]*n*1.9/5)*5,due:S.day+10}});
   const tg=PORTS.filter(q=>q.f!==gf&&q.f!=='pir'&&atWar(gf,q.f)&&portHostile(q));
   qOffersExtra(p,r,gf,mk);
@@ -1113,7 +1126,7 @@ function boardCandidate(){
 }
 function makeBoardLoot(e){
   const t=e.t,L={gold:0,goods:{}},g1=()=>GOODS[Math.floor(rnd()*4)];
-  if(t==='f'){const k=e.cargo||'Silber';L.goods[k]=k==='Gold'?5+Math.floor(rnd()*4):8+Math.floor(rnd()*5);L.gold=150+Math.floor(rnd()*200)}
+  if(t==='f'){const k=e.cargo||'Silber';L.goods[k]=k==='Gold'?5+Math.floor(rnd()*4):8+Math.floor(rnd()*5);L.gold=k==='Gold'?12000+Math.floor(rnd()*4000):10000+Math.floor(rnd()*3000)}
   else if(t==='m'){for(let i=0;i<2;i++){const g=g1();L.goods[g]=(L.goods[g]||0)+6+Math.floor(rnd()*9)}L.gold=60+Math.floor(rnd()*120)}
   else if(t==='r'){const g=g1();L.goods[g]=4+Math.floor(rnd()*7);L.gold=180+Math.floor(rnd()*220)}
   else if(t==='w'){const g=g1();L.goods[g]=6+Math.floor(rnd()*8);L.gold=300+Math.floor(rnd()*300)}
@@ -1123,7 +1136,7 @@ function makeBoardLoot(e){
 }
 function startBoard(e){
   if(!legalShip(e)&&!S.wars[e.nat]){S.wars[e.nat]=true;toast('Verbrechen! '+NAT[e.nat].n+' erklärt dir den Krieg. Begnadigung gibt es im Rathaus.')}
-  const def=ET[e.t],ratio=clamp(e.hull/def.hull,0.2,1),ec=Math.max(3,Math.round(def.crew*(0.55+0.45*ratio)-(e.cl||0)));
+  const def=ET[e.t],ratio=clamp(e.hull/def.hull,0.2,1),ec=Math.max(3,Math.round(def.crew*(e.leg!==undefined?PLEG[e.leg].cr:1)*(0.55+0.45*ratio)-(e.cl||0)));
   try{Snd.clash()}catch(_){}
   board={e:e,start:S.crew,ec:ec,ec0:ec,log:[],state:'fight',round:0,ratio:ratio,loot:null};
   e.alert=10;mode='board';curPort=null;stick.a=false;showPanel();
@@ -1157,6 +1170,12 @@ function boardFinish(choice){
     const half=Math.round(L.gold/2);S.gold+=half;const r=addGoods();
     msg='Schiff übernommen: '+nc.n+'. Dazu '+half+' Gold'+(r.took.length?' und '+r.took.join(', '):'')+'.';
     e.dead=true;
+  }else if(choice==='fleet'){
+    const F=fleetOf(),pc=prizeCrew(ci);if(F.length>=3||S.crew<pc+6){toast(F.length>=3?'Deine Flotte ist voll (höchstens 3 Schiffe).':'Zu wenig Männer für eine Prisenmannschaft.');return}
+    const hp=Math.max(20,Math.min(BASEHULL[ci],Math.round(BASEHULL[ci]*Math.max(0.35,e.hull/def.hull))));F.push({c:ci,hull:hp,cpt:newCpt()});S.crew-=pc;
+    const half=Math.round(L.gold/2);S.gold+=half;const r=addGoods();syncFleet();allyPlace(false);
+    msg='Gekapert! Die '+nc.n+' segelt jetzt mit '+pc+' Mann Prisenmannschaft in deiner Flotte. Dazu '+half+' Gold'+(r.took.length?' und '+r.took.join(', '):'')+'.';
+    e.dead=true;
   }else{
     const v=Math.round(nc.cost*0.2*Math.max(0.35,e.hull/def.hull))+L.gold;S.gold+=v;msg='Prise verkauft: '+v+' Gold.';e.dead=true;
   }
@@ -1167,7 +1186,7 @@ function boardFinish(choice){
     else if(S.wars[e.nat]&&rnd()<0.3){delete S.wars[e.nat];pm=' Die Freigelassenen loben dich: '+NAT[e.nat].n+' schließt Frieden.'}
     else pm=' Die Gefangenen werden freigelassen.';
   }
-  S.sunk++;dropFrag(e);if(e.t==='f')S.fl=(S.fl||0)+1;infKilled(e);questKill(e);toast(msg+pm);
+  S.sunk++;dropFrag(e);if(e.t==='f')S.fl=(S.fl||0)+1;infKilled(e);legKilled(e);questKill(e);toast(msg+pm);
   board=null;closePanel();save();
 }
 let landing=null;
@@ -1235,6 +1254,8 @@ function boardHTML(){
     h+='<p class="hint"><b>'+b.pn+' Gefangene.</b> Freilassen: vielleicht Frieden mit '+NAT[e.nat].n+'. Anheuern: bis zu '+Math.round(b.pn*0.5)+' neue Matrosen. Lösegeld: '+b.pn*22+' Gold.</p><div class="btnrow"><button data-act="bd:pf" class="'+(b.pris==='free'?'primary':'')+'">Freilassen</button><button data-act="bd:pc" class="'+(b.pris==='crew'?'primary':'')+'">Anheuern</button><button data-act="bd:pr" class="'+(b.pris==='ransom'?'primary':'')+'">Lösegeld</button></div>';
     h+='<div class="item"><div><b>Plündern</b><small>'+L.gold+' Gold und '+gl+'. Das Schiff wird danach versenkt.</small></div><button class="primary" data-act="bd:plunder">Plündern</button></div>';
     h+='<div class="item"><div><b>Schiff übernehmen</b><small>'+nc.n+' mit Rumpf '+hp+'. '+(ci===S.cls?'Gleiche Klasse wie dein Schiff.':nc.cost<cur.cost?'Schwächer als dein jetziges Schiff.':'Stärker als dein jetziges Schiff.')+' Dein altes Schiff geht verloren, die Ladung wird angepasst.</small></div><button data-act="bd:take">Übernehmen</button></div>';
+    {const F=fleetOf(),pc=prizeCrew(ci),ok=F.length<3&&S.crew>=pc+6,hf=Math.max(20,Math.min(BASEHULL[ci],Math.round(BASEHULL[ci]*Math.max(0.35,e.hull/def.hull))));
+     h+='<div class="item"><div><b>Kapern: in die Flotte aufnehmen</b><small>'+nc.n+' mit Rumpf '+hf+' segelt mit dir, mit eigenem Kapitän. Braucht '+pc+' Mann Prisenmannschaft. Dazu '+Math.round(L.gold/2)+' Gold und die Ladung. Flotte: '+F.length+'/3.'+(F.length>=3?' Die Flotte ist voll.':S.crew<pc+6?' Zu wenig Männer an Bord.':'')+'</small></div><button class="primary" data-act="bd:fleet"'+(ok?'':' disabled')+'>Kapern</button></div>'}
     h+='<div class="item"><div><b>Als Prise verkaufen</b><small>'+prize+' Gold. Die Ware geht verloren.</small></div><button data-act="bd:sell">'+prize+' Gold</button></div>';
   }else{
     h+='<div class="btnrow" style="margin-top:10px"><button class="primary" data-act="bd:end">Zurück an Deck</button></div>';
@@ -1250,7 +1271,7 @@ function setBounds(arena){
 }
 function gatherBattle(first){
   const ds=e=>Math.hypot(e.x-P.x,e.y-P.y);
-  const l=enemies.filter(e=>e.sink===0&&!e.dead&&ds(e)<520&&(e===first||hostileNat(e.nat)||(first.fleet&&e.fleet===first.fleet)));
+  const l=enemies.filter(e=>e.sink===0&&!e.dead&&ds(e)<520&&(e===first||hostileNat(e.nat)||legHos(e)||(first.fleet&&e.fleet===first.fleet)));
   l.sort((a,b)=>ds(a)-ds(b));
   const i=l.indexOf(first);if(i>3){l.splice(i,1);l.unshift(first)}
   return l.slice(0,3);
@@ -1258,6 +1279,7 @@ function gatherBattle(first){
 function startBattle(list){
   if(inBattle||!list.length)return;
   for(const e of list)if(!legalShip(e)&&!S.wars[e.nat]){S.wars[e.nat]=true;toast('Verbrechen! '+NAT[e.nat].n+' erklärt dir den Krieg. Begnadigung gibt es im Rathaus.')}
+  {const lg=list.find(e=>e.leg!==undefined);if(lg){const d=PLEG[lg.leg];toast(d.n+' greift an! '+d.tx);shake=Math.max(shake,.4)}}
   battle={vert:CH>CW*1.15,tw:siegeTowers(list),twT:2,world:{px:P.x,py:P.y,ph:P.h},saved:list.map(e=>({e:e,x:e.x,y:e.y,h:e.h,v:e.v,lead:e.lead,dest:e.dest})),list:list,t:0,edge:0,endT:0};
   setBounds(true);
   if(battle.vert){P.x=ARX;P.y=ARY+250;P.h=-Math.PI/2}else{P.x=ARX-230;P.y=ARY;P.h=0}P.v=Math.min(P.v,30);P.rl=[0.5,0.5];P.turnS=0;
@@ -1488,6 +1510,29 @@ function spawnEnemy(initial){
     enemies.push(mkShip(t,nat,x,y,rnd()*TAU,{}));return;
   }
 }
+/* Berühmte Piraten der Zeit: eigene, besonders harte Gegner */
+const PLEG=[
+ {n:'Blackbeard',f:'Edward Teach',s:'Queen Anne’s Revenge',t:'w',hm:3.2,dm:1.7,rl:.7,sp:1.05,cr:1.7,b:9000,hc:0x141010,sc:0x3a3434,esc:2,fire:1,tx:'Er flicht brennende Lunten in seinen Bart. Seine Breitseiten setzen Schiffe in Brand.'},
+ {n:'Black Bart',f:'Bartholomew Roberts',s:'Royal Fortune',t:'w',hm:3.0,dm:1.6,rl:.6,sp:1.1,cr:1.5,b:9500,hc:0x2a1a12,sc:0x1a1a1c,esc:2,tx:'Der erfolgreichste Pirat seiner Zeit. Er lädt schneller nach als jeder andere.'},
+ {n:'Henry Morgan',f:'Henry Morgan',s:'Satisfaction',t:'w',hm:2.8,dm:1.5,rl:.75,sp:1,cr:1.6,b:8000,hc:0x5a2a14,sc:0xe0d0b0,esc:3,tx:'Der Freibeuter von Port Royal segelt nie allein.'},
+ {n:'Calico Jack',f:'Jack Rackham mit Anne Bonny und Mary Read',s:'Revenge',t:'p',hm:3.4,dm:1.5,rl:.7,sp:1.2,cr:2.2,b:7000,hc:0x3a2a20,sc:0xd8c8a8,esc:1,tx:'Anne Bonny und Mary Read führen die Enterer an. Wer sie entern will, braucht viele Männer.'},
+ {n:'Charles Vane',f:'Charles Vane',s:'Ranger',t:'s',hm:4.2,dm:1.6,rl:.65,sp:1.3,cr:2.4,b:6500,hc:0x1c2430,sc:0x3a3a3a,esc:1,tx:'Schnell und gnadenlos. Er schlägt zu und ist weg, bevor du nachgeladen hast.'},
+ {n:'Black Sam Bellamy',f:'Samuel Bellamy',s:'Whydah',t:'w',hm:3.0,dm:1.55,rl:.7,sp:1.05,cr:1.5,b:8500,hc:0x302018,sc:0xe8dcc0,esc:2,tx:'Der „Robin Hood der Meere“ mit seiner schwer bewaffneten Galeere.'},
+ {n:'Henry Every',f:'Henry Every',s:'Fancy',t:'w',hm:3.4,dm:1.6,rl:.7,sp:1.1,cr:1.7,b:10000,hc:0x2a2018,sc:0xf0e6d0,esc:2,tx:'Der König der Piraten. Auf seinen Kopf ist das höchste Kopfgeld ausgesetzt.'},
+ {n:'Edward Low',f:'Edward Low',s:'Rose Pink',t:'r',hm:4.4,dm:1.7,rl:.6,sp:1.15,cr:2.4,b:6000,hc:0x2a0e0e,sc:0x5a1a1a,esc:1,tx:'Berüchtigt für seine Grausamkeit. Er kämpft bis zum letzten Mann.'}];
+function legHos(e){return e.leg!==undefined||!!e.legE}
+function legRl(e){if(e.leg===undefined)return e.legE?.85:1;return PLEG[e.leg].rl*(e.hull<e.mh*.4?.75:1)}
+function legDm(e){return e.leg!==undefined?PLEG[e.leg].dm:e.legE?1.2:1}
+function legTick(){if(!S||inBattle||mode!=='play')return;if(S.legN===undefined)S.legN=S.day+6;
+  if(enemies.some(e=>e.leg!==undefined&&!e.dead&&e.sink===0))return;if(S.day<S.legN)return;
+  const K=S.legK||[],al=PLEG.map((_,i)=>i).filter(i=>K.indexOf(i)<0);if(!al.length)return;S.legN=S.day+12+Math.floor(rnd()*8);
+  const i=al[Math.floor(rnd()*al.length)],d=PLEG[i];
+  for(let k=0;k<60;k++){const x=90+rnd()*((reg2()?W:OLDW)-180),y=90+rnd()*(H-180),dd=Math.hypot(x-P.x,y-P.y);if(!inWater(x,y,90)||dd<900||dd>1800)continue;
+    const h=rnd()*TAU,fid='L'+i+'-'+S.day,e=mkShip(d.t,'pir',x,y,h,{leg:i,nm:d.n,fleet:fid,lhc:d.hc,lsc:d.sc});e.hull*=d.hm;e.mh=e.hull;enemies.push(e);
+    for(let j=0;j<d.esc;j++){const a=h+Math.PI*(.7+j*.3)*(j%2?1:-1),q=mkShip('r','pir',x+Math.cos(a)*90,y+Math.sin(a)*90,h,{legE:1,fleet:fid,lead:e,off:{x:-70-j*40,y:(j%2?1:-1)*60}});q.hull*=1.4;q.mh=q.hull;enemies.push(q)}
+    toast('Gerücht: '+d.n+' ('+d.f+') kreuzt mit der '+d.s+' nahe '+nearestPortName(x,y)+'. Kopfgeld: '+d.b+' Gold. Auf der Minikarte rot markiert.');return}}
+function legKilled(e){if(e.leg===undefined||e._lk)return;e._lk=1;const d=PLEG[e.leg];S.legK=S.legK||[];if(S.legK.indexOf(e.leg)<0)S.legK.push(e.leg);S.gold+=d.b;addMor(15);for(const n of NATS4)repAdd(n,4);
+  toast(d.n+' ist besiegt! Kopfgeld: '+d.b+' Gold. Die ganze Karibik spricht von dir.');try{chronAdd('Den legendären Piraten '+d.n+' ('+d.f+') besiegt.')}catch(_){}}
 function infD(i){const d=INF[i],x=(S&&S.infX&&S.infX[i])||null;return{n:x?x.n:d.n,t:d.t,hm:d.hm*(1+((x&&x.lv)||0)*.08),b:Math.round(x&&x.b?x.b:d.b)}}
 function spawnInfamous(){
   const K=S.infK||[],al=INF.map((_,i)=>i).filter(i=>K.indexOf(i)<0&&!enemies.some(e=>e.inf===i));if(!al.length)return;
@@ -1503,7 +1548,7 @@ function infKilled(e){
 function nearestPortName(x,y){let b=null,bd=1e9;PORTS.forEach(p=>{const d=Math.hypot(p.x-x,p.y-y);if(d<bd){bd=d;b=p}});return b?b.n:'?'}
 function spawnAll(){enemies=[];for(let i=0;i<11;i++)spawnEnemy(true)}
 function newGame(nat,fresh){
-  nat=nat||'eng';applyNat(nat);resetPorts();fleetT=T+12;inBattle=false;battle=null;setBounds(false);
+  nat=nat||'eng';applyNat(nat);resetPorts();fleetT=T+240+rnd()*120;inBattle=false;battle=null;setBounds(false);
   const p=PORTS.find(q=>q.n===NAT[nat].home);
   S={gold:500,mor:70,cls:0,hull:CLS[0].hull,crew:20,goods:Object.fromEntries(ALLG.map(g=>[g,0])),day:1,dayT:0,sunk:0,found:0,tr:[],won:false,nat:nat,wars:{},quests:[],ammo:{chain:8,grape:8},asel:'ball',up:newUp(),love:{},wife:null,ally:null,diff:selDiff,off:{},camp:0,fl:0};
   applyUp();S.hull=CLS[0].hull;
@@ -1530,7 +1575,7 @@ function migrate(S0){const v=S0.sv||0;
 function slotInfo(i){const d=slotData(i);if(!d)return null;const c=CLS[d.S.cls||0];return NAT[d.S.nat||'eng'].n+' · Tag '+d.S.day+' · '+Math.round(d.S.gold)+' Gold · '+c.n+' · Spielzeit '+ptTxt(d.S.pt)}
 function encCode(i){try{return btoa(unescape(encodeURIComponent('KK1:'+localStorage.getItem(KEYS[i]))))}catch(e){return ''}}
 function importCode(code){try{const t=decodeURIComponent(escape(atob(code.trim())));if(t.slice(0,4)!=='KK1:')return -1;const d=JSON.parse(t.slice(4));if(!d||!d.S||!d.p)return -1;let i=[0,1,2].find(k=>!slotData(k));if(i===undefined)i=2;localStorage.setItem(KEYS[i],t.slice(4));return i}catch(e){return -1}}
-const GAME_VER='1.79',SAVE_VER=66;
+const GAME_VER='1.83',SAVE_VER=66;
 function save(){try{saveFx()}catch(e){}S.pf=PORTS.map(p=>[p.n,p.f,p.hp]);S.sv=SAVE_VER;try{localStorage.setItem(KEYS[curSlot],JSON.stringify({S:S,p:(inBattle&&battle?{x:battle.world.px,y:battle.world.py,h:battle.world.ph}:{x:P.x,y:P.y,h:P.h})}))}catch(e){}}
 function hasSave(){return !!slotData(curSlot)}
 function load(){
@@ -1656,13 +1701,13 @@ function onSunk(e){
   if(inBattle)for(const a of ALL)if(a.sink===0)cXP(a.r,20);
   S.sunk++;dropFrag(e);addMor(4);
   if(e.nat==='pir'){for(const n of NATS4)repAdd(n,.5)}else{repAdd(e.nat,-3);for(const n of NATS4)if(n!==e.nat&&atWar(n,e.nat))repAdd(n,1)}if(S.sunk%12===0&&Object.keys(S.off).some(k=>S.off[k])){applyUp();toast('Beförderung! Deine Offiziere steigen auf Stufe '+offLv()+' auf.')}
-  let g=Math.round(e.t==='m'?80+rnd()*140:e.t==='p'?200+rnd()*200:e.t==='f'?120+rnd()*140:e.t==='w'?300+rnd()*250:e.t==='s'?90+rnd()*100:150+rnd()*180);if(S.nat==='pir')g=Math.round(g*1.25);
+  let g=Math.round(e.t==='m'?80+rnd()*140:e.t==='p'?200+rnd()*200:e.t==='f'?(e.cargo==='Gold'?12000:10000)+rnd()*3000:e.t==='w'?300+rnd()*250:e.t==='s'?90+rnd()*100:150+rnd()*180);if(S.nat==='pir')g=Math.round(g*1.25);
   S.gold+=g;
   toast(ET[e.t].n+' versenkt. Beute: '+g+' Gold');
   if(e.t==='m'||rnd()<.5)loots.push({x:e.x,y:e.y,g:GOODS[Math.floor(rnd()*4)],n:(e.conv?18:6)+Math.floor(rnd()*10),life:70});if(e.conv){const xg=250+Math.round(rnd()*250);S.gold+=xg;S.st=S.st||{};S.st.conv=(S.st.conv||0)+1;toast('Konvoi-Ladung erbeutet: +'+xg+' Gold')}
   if(e.kraken){krakenKilled(e);for(let k=0;k<30;k++)emit(e.x+(rnd()-.5)*90,e.y+(rnd()-.5)*60,(rnd()-.5)*40,(rnd()-.5)*40,2,6,WHITE,10,2,12);return}
   if(e.spc){const xg=e.spc==='q'?1200:600;S.gold+=xg;toast('Die '+ET[e.t].n+' sinkt. Du fischst '+xg+' Gold aus den Trümmern. Entern hätte dir das Schiff gebracht!')}
-  infKilled(e);if(e.rival)rivalKilled(e);if(e.hunt)hunterKilled(e);if(e.esc)escSunk(e);lmSunk(e);flagSunk(e);if(inBattle)xpGain(.025);questKill(e);if(e.t==='f'){S.fl=(S.fl||0)+1;dropTreasure(e)}
+  infKilled(e);legKilled(e);if(e.rival)rivalKilled(e);if(e.hunt)hunterKilled(e);if(e.esc)escSunk(e);lmSunk(e);flagSunk(e);if(inBattle)xpGain(.025);questKill(e);if(e.t==='f'){S.fl=(S.fl||0)+1;dropTreasure(e)}
   for(let k=0;k<16;k++)emit(e.x+(rnd()-.5)*30,e.y+(rnd()-.5)*30,(rnd()-.5)*40,(rnd()-.5)*40,2,6,WHITE,10,2,10+rnd()*12);
   if(!S.won&&S.gold>=10000){S.won=true;toast('Du bist der Piratenkönig der Karibik!')}
 }
@@ -1677,7 +1722,7 @@ function updEnemy(e,dt){
   const dx=P.x-e.x,dy=P.y-e.y,dp=Math.hypot(dx,dy),b=Math.atan2(dy,dx);
   if(e.convE&&e.fleet&&(!e.lead||e.lead.dead||e.lead.sink>0))e.fleet=0;
   if(dp>1600&&!e.fleet){e.dead=true;return}
-  const hn=(hostileNat(e.nat)||e.story||e.rival||e.siege||e.hunt)&&(mode==='play'||mode==='battle'),hostile=inBattle?(e.t!=='m'&&(e.alert>0||hn)):(hn&&e.t!=='m'&&e.t!=='f'&&dp<((e.inf!==undefined||e.rival||e.hunt)?760:480)*(todLight()<.3?.7:1));
+  const hn=(hostileNat(e.nat)||e.story||e.rival||e.siege||e.hunt||legHos(e))&&(mode==='play'||mode==='battle'),hostile=inBattle?(e.t!=='m'&&(e.alert>0||hn)):(hn&&e.t!=='m'&&e.t!=='f'&&dp<((e.inf!==undefined||e.rival||e.hunt||legHos(e))?760:480)*(todLight()<.3?.7:1));
   let des=e.h;
   if(hostile){
     if(dp>240)des=b;
@@ -1685,7 +1730,7 @@ function updEnemy(e,dt){
     if(inBattle&&battle&&!battle.town)des=tacDes(e,dp,b,des);
     if(inBattle&&battle&&!battle.town){
       const mh=e.mh||def.hull;
-      if(!e.flee&&!e.kraken&&e.hull<mh*.22&&e.t!=='w'&&!e.rival&&!e.hunt&&e.inf===undefined&&!e.guard&&!e.tg&&rnd()<dt*.6){e.flee=1;toast(def.n+' dreht ab und versucht zu fliehen!')}
+      if(!e.flee&&!e.kraken&&e.hull<mh*.22&&e.t!=='w'&&!e.rival&&!e.hunt&&e.inf===undefined&&!legHos(e)&&!e.guard&&!e.tg&&rnd()<dt*.6){e.flee=1;toast(def.n+' dreht ab und versucht zu fliehen!')}
       if(e.flee){des=b+Math.PI;if(e.x<BXA+55||e.x>BXB-55||e.y<BYA+55||e.y>BYB-55){e.dead=true;toast(def.n+' ist entkommen.');return}}
       if(!battle.reinf&&!e.kraken&&e.hull<mh*.5&&battle.t>8&&rnd()<dt*.07){battle.reinf=1;const t2=e.t==='w'||e.t==='f'?'p':e.t==='m'?'p':e.t,n2=mkShip(t2,e.nat,battle.vert?ARX+(rnd()-.5)*280:BXB-70,battle.vert?BYA+70:ARY+(rnd()-.5)*280,battle.vert?Math.PI/2:Math.PI,{alert:10});enemies.push(n2);battle.list.push(n2);toast('Verstärkung! Ein weiteres Schiff von '+(NAT[e.nat]?NAT[e.nat].n:'Piraten')+' eilt herbei.')}
       e.rush=0;e.ramCd=(e.ramCd||0)-dt;e.bdCd=(e.bdCd||0)-dt;
@@ -1707,19 +1752,19 @@ function updEnemy(e,dt){
   if(e.burn>0){if(rnd()<dt*6)emit(e.x+(rnd()-.5)*14,e.y+(rnd()-.5)*10,(rnd()-.5)*8,-10,.6,3.5,FIRE,4,30+rnd()*18,10);e.burn-=dt;e.hull-=(e.mh||50)*.012*dt;if(rnd()<dt*14){const ox=(rnd()-.5)*20,oy=(rnd()-.5)*20;emit(e.x+ox,e.y+oy,(rnd()-.5)*20,-24,.7,3,FIRE,3,6,8);emit(e.x+ox,e.y+oy-6,(rnd()-.5)*14,-30,1.2,4,SMOKE,8,6,6)}
     if(e.hull<=0&&e.sink===0){e.sink=0.01;Snd.sink(e);onSunk(e)}}
   const tr=(e.slow>0?0.35:0.65)*dt,ddh=angDiff(des,e.h);e.turnS=(e.turnS||0)*.9+clamp(ddh*2,-1,1)*.1;e.h+=clamp(ddh,-tr,tr);
-  let tv=def.spd*windF(e.h)*0.95*dmgSpd(e)*(e.rush?1.25:e.flee?1.1:1);if(e.slow>0){e.slow-=dt;tv*=0.4}if(e.lead&&!e.lead.dead&&e.lead.sink===0&&!hostile)tv=Math.min(tv,e.lead.v*1.15+10);e.v+=(tv-e.v)*Math.min(1,dt*.7);
+  let tv=def.spd*windF(e.h)*0.95*dmgSpd(e)*(e.rush?1.25:e.flee?1.1:1)*(e.leg!==undefined?PLEG[e.leg].sp:1);if(e.slow>0){e.slow-=dt;tv*=0.4}if(e.lead&&!e.lead.dead&&e.lead.sink===0&&!hostile)tv=Math.min(tv,e.lead.v*1.15+10);e.v+=(tv-e.v)*Math.min(1,dt*.7);
   e.x=clamp(e.x+Math.cos(e.h)*e.v*dt,BXA+40,BXB-40);e.y=clamp(e.y+Math.sin(e.h)*e.v*dt,BYA+40,BYB-40);
   if(pushOut(e,0))e.wp=null;
   if(e.kraken&&(mode==='play'||mode==='battle')){e.kcd=(e.kcd||0)-dt;if(dp<85&&e.kcd<=0){e.kcd=2.6;const dm=Math.round(10+rnd()*8);S.hull-=dm;S.crew=Math.max(2,S.crew-(rnd()<.4?1:0));shake=.7;vib([80,40,80]);Snd.hit(P.x,P.y);for(let q=0;q<10;q++)emit(P.x+(rnd()-.5)*40,P.y+(rnd()-.5)*40,(rnd()-.5)*60,-30,1,4,WHITE,8,2,10);if(rnd()<.35)toast('Ein Fangarm schlägt auf dein Deck! '+dm+' Schaden.');if(S.hull<=0){S.hull=0;die();return}}}
   if(def.cannons>0&&dp<270&&((hn&&e.t!=='m')||e.alert>0)&&(mode==='play'||mode==='battle')){
     for(const sd of [-1,1]){
       const i=sd<0?0:1,n=e.h+sd*Math.PI/2;
-      if(e.rl[i]<=0&&Math.abs(angDiff(n,b))<0.22){e.rl[i]=(5.5+rnd()*1.5)*DM().r*(1+.15*(WX.rain||0));fire(e,sd,'e',def.cannons,def.dmg*0.6*DM().d,def.L)}
+      if(e.rl[i]<=0&&Math.abs(angDiff(n,b))<0.22){e.rl[i]=(5.5+rnd()*1.5)*DM().r*(1+.15*(WX.rain||0))*legRl(e);fire(e,sd,'e',def.cannons+(e.leg!==undefined?3:0),def.dmg*0.6*DM().d*legDm(e),def.L,(e.leg!==undefined&&PLEG[e.leg].fire&&rnd()<.5)?'fire':undefined)}
     }
   }
   if(inBattle&&ALL.length&&e.t!=='m'&&(e.alert>0||hn)){
     for(const al of ALL){if(al.sink>0)continue;const ax=al.x-e.x,ay=al.y-e.y,ad=Math.hypot(ax,ay);if(ad>270)continue;
-      for(const sd of[-1,1]){const i=sd<0?0:1,n=e.h+sd*Math.PI/2;if(e.rl[i]<=0&&Math.abs(angDiff(n,Math.atan2(ay,ax)))<0.22){e.rl[i]=(5.5+rnd()*1.5)*DM().r;fire(e,sd,'e',def.cannons,def.dmg*0.6*DM().d,def.L)}}}
+      for(const sd of[-1,1]){const i=sd<0?0:1,n=e.h+sd*Math.PI/2;if(e.rl[i]<=0&&Math.abs(angDiff(n,Math.atan2(ay,ax)))<0.22){e.rl[i]=(5.5+rnd()*1.5)*DM().r*legRl(e);fire(e,sd,'e',def.cannons+(e.leg!==undefined?3:0),def.dmg*0.6*DM().d*legDm(e),def.L)}}}
   }
 }
 function update(dt){
@@ -1752,13 +1797,14 @@ function update(dt){
   {const zl=spLv('zim');if(zl&&S.hull<maxHull()&&S.hull>0)S.hull=Math.min(maxHull(),S.hull+.06*zl*dt)}
   battleCool-=dt;
   if(!inBattle&&battleCool<=0){
-    const trig=enemies.find(e=>e.sink===0&&e.t!=='m'&&e.t!=='f'&&hostileNat(e.nat)&&Math.hypot(e.x-P.x,e.y-P.y)<300);
+    const trig=enemies.find(e=>e.sink===0&&e.t!=='m'&&e.t!=='f'&&(hostileNat(e.nat)||legHos(e))&&Math.hypot(e.x-P.x,e.y-P.y)<300);
     if(trig){startBattle(gatherBattle(trig,false));return}
   }
   enemies=enemies.filter(e=>!e.dead);
   if(enemies.filter(e=>!e.fleet).length<(WX.storm>.6?7:11)&&T>spawnT){spawnEnemy(false);spawnT=T+8}
   if(T>infT&&mode==='play'&&S.nat!=='pir'){infT=T+70+rnd()*60;if(!enemies.some(e=>e.inf!==undefined))spawnInfamous()}
-  if(T>fleetT&&!enemies.some(e=>e.fleet)){spawnFleet();fleetT=T+60+rnd()*50}
+  /* Schatzflotten sind selten (etwa alle 20 bis 30 Tage) und werden vorher in den Tavernen angekündigt */
+  flTick();legTick();
   portsUpdate(dt);
   for(let i=balls.length-1;i>=0;i--){
     const b=balls[i];b.x+=b.vx*dt;b.y+=b.vy*dt;b.l-=dt;let hit=false;
@@ -2071,16 +2117,20 @@ function stormDamage(dt){
   stormMsgT-=dt;
   if(Math.random()<dt*0.05*WX.storm*k){S.hull=Math.max(floor,S.hull-6);shake=.5;if(stormMsgT<=0){toast('Eine Sturmbö schlägt dein Schiff! Mit 3 Holz kannst du Lecks flicken (Notreparatur).');stormMsgT=25}}
 }
+function dirName(a){return['Osten','Südosten','Süden','Südwesten','Westen','Nordwesten','Norden','Nordosten'][Math.round(angNorm(a)/(Math.PI/4))%8]}
 function weatherTick(dt){
   WX.t-=dt;
   if(WX.t<=0){
     const ss=S?season():1,r=rnd()*(ss===2?1.25:ss===0?.9:1),k=r<0.36?'clear':r<0.46?'calm':r<0.62?'fog':r<0.82?'rain':'storm',old=WX.kind;
-    WX.kind=(k===old)?'clear':k;WX.t=(WX.kind==='clear'?35:30)+rnd()*35;
-    if(mode==='play'||mode==='battle'){if(WX.kind==='storm')toast('Ein Sturm zieht auf! Starker Wind, unsicheres Zielen.');else if(WX.kind==='rain')toast('Regen setzt ein. Die Sicht wird schlechter.');else if(WX.kind==='fog')toast('Nebel zieht auf. Man sieht kaum noch etwas.');else if(old!=='clear')toast('Das Wetter klart auf.')}
+    /* Ein Sturm kündigt sich an: erst eine Wolkenwand am Horizont, auffrischender Wind, höhere Wellen */
+    if(old==='front'){WX.kind='storm';WX.t=30+rnd()*35}
+    else if(k==='storm'&&old!=='storm'){WX.kind='front';WX.t=26+rnd()*8;WX.sdir=rnd()*TAU;if(mode==='play'||mode==='battle')toast('Am Horizont im '+dirName(WX.sdir)+' zieht ein Sturm auf. Der Wind frischt auf. Noch kannst du einen Hafen anlaufen.');return}
+    else{WX.kind=(k===old)?'clear':k;WX.t=(WX.kind==='clear'?35:30)+rnd()*35}
+    if(mode==='play'||mode==='battle'){if(WX.kind==='storm')toast('Der Sturm ist da! Starker Wind, unsicheres Zielen.');else if(WX.kind==='rain')toast('Regen setzt ein. Die Sicht wird schlechter.');else if(WX.kind==='fog')toast('Nebel zieht auf. Man sieht kaum noch etwas.');else if(old!=='clear')toast('Das Wetter klart auf.')}
   }
   if(WX.kind==='calm'&&!WX._c){WX._c=1;if(mode==='play'||mode==='battle')toast('Flaute! Kaum Wind. Nutze Strömungen oder warte ab.')}else if(WX.kind!=='calm')WX._c=0;
   const tc=WX.kind==='calm'?1:0;WX.calm+=(tc-WX.calm)*Math.min(1,dt*.35);
-  const ts=WX.kind==='storm'?1:0,tf=WX.kind==='fog'?1:0,tr=WX.kind==='rain'?1:0,k=Math.min(1,dt*0.35);
+  const ts=WX.kind==='storm'?1:WX.kind==='front'?.3:0,tf=WX.kind==='fog'?1:0,tr=WX.kind==='rain'?1:0,k=Math.min(1,dt*0.35);WX.warn=(WX.warn||0)+((WX.kind==='front'?1:0)-(WX.warn||0))*Math.min(1,dt*.25);
   WX.storm+=(ts-WX.storm)*k;WX.fog+=(tf-WX.fog)*k;WX.rain+=(tr-WX.rain)*k;
   if(WX.storm>0.6&&rnd()<dt*0.12){WX.flash=0.55;Snd.thunder()}
   WX.flash=Math.max(0,WX.flash-dt*1.6);
@@ -2101,6 +2151,10 @@ function cinema(g,cw,ch){
   const vg=g.createRadialGradient(cw/2,ch/2,Math.min(cw,ch)*0.35,cw/2,ch/2,Math.max(cw,ch)*0.75);vg.addColorStop(0,'rgba(0,10,25,0)');vg.addColorStop(1,'rgba(0,8,22,.3)');
   g.fillStyle=vg;g.fillRect(0,0,cw,ch);
 }
+/* Sturmfront im 2D-Bild: dunkle Wolkenbank am Bildrand in Richtung des Sturms */
+function stormWall2D(g,cw,ch){const a=WX.sdir||0,dx=Math.cos(a),dy=Math.sin(a)*TK,l=Math.hypot(dx,dy)||1,ux=dx/l,uy=dy/l,R=Math.max(cw,ch)*.75,ex=cw/2+ux*R,ey=ch/2+uy*R,w=WX.warn;
+  const gr=g.createLinearGradient(cw/2+ux*R*.15,ch/2+uy*R*.15,ex,ey);gr.addColorStop(0,'rgba(24,30,42,0)');gr.addColorStop(.6,'rgba(24,30,42,'+(.38*w).toFixed(3)+')');gr.addColorStop(1,'rgba(14,18,28,'+(.72*w).toFixed(3)+')');g.fillStyle=gr;g.fillRect(0,0,cw,ch);
+  if(WX.warn>.4&&rnd()<.012){g.fillStyle='rgba(235,240,255,.35)';g.fillRect(0,0,cw,ch)}}
 function drawWeather(g,cw,ch){
   g.setTransform(DPR,0,0,DPR,0,0);
   const L=todLight();
@@ -2145,6 +2199,7 @@ function drawWeather(g,cw,ch){
     g.globalAlpha=1;
   }
   if(WX.flash>0){g.fillStyle='rgba(255,255,255,'+WX.flash.toFixed(2)+')';g.fillRect(0,0,cw,ch)}
+  if((WX.warn||0)>.02)stormWall2D(g,cw,ch);
   /* Nebel: Sichtkreis um das Schiff */
   if(WX.fog>0.02){
     const sx=cw/2+(P?(P.x-camX)*camK:0),sy=ch/2+(P?(P.y-camY)*camK*TK:0),R=Math.max(cw,ch)*0.6,gr=g.createRadialGradient(sx,sy,60,sx,sy,R*0.62);
@@ -2625,13 +2680,14 @@ function renderScene(dt){
     const vd=Math.hypot(e.x-P.x,e.y-P.y);if((todLight()<.3&&vd>760+160*al)||(WX.storm>.6&&vd>900+160*al))continue}}
     if(e.kraken){drawKraken(g,e);continue}
     const d=ET[e.t],sk=e.sink>0,k=sk?clamp(e.sink/2.6,0,1):0;
-    drawShip(g,e.x,e.y,e.h+(sk?k*0.5:0),d.L,e.inf!==undefined?0x050506:d.hc,d.sail,natFlag(e.nat,d.flag),mastsFor(d.L),{heel:sk?0:(e.turnS||0)*.8,flut:Math.abs(e.turnS||0)*.8,nat:e.nat,v:sk?0:e.v,alpha:(e.ghost?.62:1)*(1-k*0.9),scale:1-k*0.18,cannons:d.cannons,sail:1-.6*(e.tear||0),mb:e.mb||0,dmg:sk?0:clamp(1-e.hull/(e.mh||d.hull),0,1)});
+    drawShip(g,e.x,e.y,e.h+(sk?k*0.5:0),d.L,e.lhc!==undefined?e.lhc:e.inf!==undefined?0x050506:d.hc,e.lsc!==undefined?e.lsc:d.sail,natFlag(e.nat,d.flag),mastsFor(d.L),{heel:sk?0:(e.turnS||0)*.8,flut:Math.abs(e.turnS||0)*.8,nat:e.nat,v:sk?0:e.v,alpha:(e.ghost?.62:1)*(1-k*0.9),scale:1-k*0.18,cannons:d.cannons,sail:1-.6*(e.tear||0),mb:e.mb||0,dmg:sk?0:clamp(1-e.hull/(e.mh||d.hull),0,1)});
     if(sk){g.fillStyle='rgba(255,255,255,'+(0.5*(1-k)).toFixed(2)+')';for(let i=0;i<5;i++){g.beginPath();g.arc(e.x+Math.sin(i*2.3+CT)*d.L*0.3,e.y+Math.cos(i*1.7)*d.L*0.2,3+i,0,TAU);g.fill()}}
     else if(e.hull<(e.mh||d.hull)){const wd=d.L*0.8;g.fillStyle='rgba(0,0,0,.6)';g.fillRect(e.x-wd/2,e.y-d.L*0.62,wd,4.5);g.fillStyle='#cf4333';g.fillRect(e.x-wd/2+0.7,e.y-d.L*0.62+0.7,(wd-1.4)*clamp(e.hull/(e.mh||d.hull),0,1),3.1)}
-    if(!sk&&Math.hypot(e.x-P.x,e.y-P.y)<1100)natBadge(g,e.x,e.y+d.L*0.62+11/camK*1.3,e.nat,hostileNat(e.nat),9.5/camK*1.3);
+    if(!sk&&Math.hypot(e.x-P.x,e.y-P.y)<1100)natBadge(g,e.x,e.y+d.L*0.62+11/camK*1.3,e.nat,hostileNat(e.nat)||legHos(e),9.5/camK*1.3);
     if(e.spc&&!sk)txt(g,e.nm,e.x,e.y-d.L*0.95,11/camK*1.3,'#d9a0ff');
     if((e.rival||e.story||e.hunt||e.esc||e.qh)&&!sk)txt(g,e.nm+(e.story?' · Hauptgeschichte':e.hunt?' · Kopfgeldjäger':e.esc?' · Geleitschiff':e.qh?' · Gesucht':' · Rivale'),e.x,e.y-d.L*0.95,11/camK*1.3,'#ff9a5a');
     if(e.inf!==undefined&&!sk)txt(g,e.nm+' · '+infD(e.inf).b+' Gold',e.x,e.y-d.L*0.95,11/camK*1.3,'#ff6a5a');
+    if(e.leg!==undefined&&!sk)txt(g,'☠ '+e.nm+' · '+PLEG[e.leg].s,e.x,e.y-d.L*0.95,12/camK*1.3,'#ff4a3a');
     if(e.t==='f'&&!sk)txt(g,e.cargo==='Gold'?'Goldschiff':'Silberschiff',e.x,e.y-d.L*0.85,11/camK*1.3,e.cargo==='Gold'?'#ffd04a':'#dfe6ee');
     if(e===nearBoard&&!sk){g.strokeStyle='rgba(255,220,90,.9)';g.lineWidth=2;g.setLineDash([5,4]);g.beginPath();g.arc(e.x,e.y,d.L*0.75,0,TAU);g.stroke();g.setLineDash([])}
   }
@@ -2706,13 +2762,14 @@ function drawMini(){
     for(const b of FOG){mctx.fillStyle='rgba(225,230,236,.55)';mctx.beginPath();mctx.arc(b.x*k,b.y*k,b.r*k*.75,0,TAU);mctx.fill()}
     mctx.restore();
   }
+  if(S){const fr=flRoute();if(fr){mctx.save();mctx.setLineDash([4,3]);mctx.strokeStyle='rgba(255,208,74,.95)';mctx.lineWidth=1.6;mctx.beginPath();mctx.moveTo(fr.a.x*k,(fr.a.y+60)*k);mctx.lineTo(fr.b.x*k,(fr.b.y+60)*k);mctx.stroke();mctx.restore()}}
   for(const p of PORTS){const st=S?portStat(p)[0]:'peace';mctx.fillStyle=natCol(p.f);mctx.strokeStyle=st==='own'?'#ffd04a':st==='war'?HCOL():p.f==='pir'?'#f2efe4':'rgba(10,14,20,.85)';mctx.lineWidth=st==='own'||st==='war'?2:1.2;mctx.beginPath();mctx.arc(p.x*k,p.y*k,3.6,0,TAU);mctx.fill();mctx.stroke();if(S&&evOf(p)){mctx.strokeStyle=EVT[evOf(p).k].c;mctx.lineWidth=1.6;mctx.beginPath();mctx.arc(p.x*k,p.y*k,5.5,0,TAU);mctx.stroke()}}
   if(!S)return;
   for(const p of questTargets()){mctx.strokeStyle='#ffd04a';mctx.lineWidth=2;mctx.beginPath();mctx.arc(p.x*k,p.y*k,7,0,TAU);mctx.stroke()}
   if(dest){mctx.strokeStyle='#5fe0ff';mctx.lineWidth=2;mctx.beginPath();mctx.arc(dest.x*k,dest.y*k,6,0,TAU);mctx.stroke();mctx.beginPath();mctx.moveTo(dest.x*k-9,dest.y*k);mctx.lineTo(dest.x*k+9,dest.y*k);mctx.moveTo(dest.x*k,dest.y*k-9);mctx.lineTo(dest.x*k,dest.y*k+9);mctx.stroke()}
   mctx.strokeStyle='#cf4333';mctx.lineWidth=2;
   for(const t of S.tr)if(t.hint){mctx.beginPath();mctx.arc(t.hint.x*k,t.hint.y*k,t.hint.r*k,0,TAU);mctx.stroke()}
-  for(const e of enemies){if(e.sink>0)continue;if(e.spc){mctx.fillStyle='#c070ff';mctx.beginPath();mctx.arc(e.x*k,e.y*k,4,0,TAU);mctx.fill();continue}mctx.fillStyle=e.t==='f'?'#ffd04a':e.nat==='pir'?'#222':(FAC[e.nat]?FAC[e.nat].c:'#e9e6dc');mctx.strokeStyle=hostileNat(e.nat)||e.hunt?HCOL():FCOL();mctx.lineWidth=1.6;mctx.beginPath();mctx.arc(e.x*k,e.y*k,e.t==='f'?5:3.8,0,TAU);mctx.fill();mctx.stroke()}
+  for(const e of enemies){if(e.sink>0)continue;if(e.leg!==undefined){mctx.fillStyle='#ff2a1a';mctx.strokeStyle='#000';mctx.lineWidth=1.5;mctx.beginPath();mctx.arc(e.x*k,e.y*k,5,0,TAU);mctx.fill();mctx.stroke();continue}if(e.spc){mctx.fillStyle='#c070ff';mctx.beginPath();mctx.arc(e.x*k,e.y*k,4,0,TAU);mctx.fill();continue}mctx.fillStyle=e.t==='f'?'#ffd04a':e.nat==='pir'?'#222':(FAC[e.nat]?FAC[e.nat].c:'#e9e6dc');mctx.strokeStyle=hostileNat(e.nat)||e.hunt?HCOL():FCOL();mctx.lineWidth=1.6;mctx.beginPath();mctx.arc(e.x*k,e.y*k,e.t==='f'?5:3.8,0,TAU);mctx.fill();mctx.stroke()}
   for(const q of SITES){if(!siteKnown(q))continue;mctx.fillStyle=q.k==='w'?'#8fe3ff':'#e0a060';mctx.fillRect(q.x*k-2,q.y*k-2,4,4)}
   drawConvMini(k);if(S.story&&(S.story.ch===10||S.story.ch===11)&&S.story.fx!==undefined){mctx.strokeStyle='#ffd04a';mctx.lineWidth=2.4;mctx.beginPath();mctx.arc(S.story.fx*k,S.story.fy*k,8,0,TAU);mctx.stroke()}if(S.rg&&S.rg.kr===1){mctx.strokeStyle='#ff8ad0';mctx.lineWidth=2;mctx.beginPath();mctx.arc(S.rg.kx*k,S.rg.ky*k,7,0,TAU);mctx.stroke()}for(const e of SEAE){mctx.fillStyle=e.k==='ghost'?'#b8c4cc':'#ffffff';mctx.fillRect(e.x*k-1.5,e.y*k-1.5,3,3)}if(S.story&&S.story.ch===4){mctx.strokeStyle='#ffd04a';mctx.lineWidth=2;mctx.beginPath();mctx.arc(S.story.hx*k,S.story.hy*k,7,0,TAU);mctx.stroke()}for(const v of VIL){mctx.fillStyle='#c9a55a';mctx.beginPath();mctx.moveTo(v.x*k,v.y*k-3);mctx.lineTo(v.x*k-3,v.y*k+2);mctx.lineTo(v.x*k+3,v.y*k+2);mctx.fill()}
   if(S.hur){mctx.strokeStyle='rgba(230,236,246,.9)';mctx.lineWidth=2;mctx.setLineDash([4,3]);mctx.beginPath();mctx.arc(S.hur.x*k,S.hur.y*k,S.hur.r*k,0,TAU);mctx.stroke();mctx.setLineDash([]);mctx.fillStyle='rgba(60,70,90,.35)';mctx.fill()}
@@ -2875,7 +2932,7 @@ function retireHTML(){
   $('ph').textContent='Ruhestand';$('psub').textContent=R.t+' · Tag '+S.day;$('tabs').innerHTML='';
   const row=(a,b)=>'<div class="kv"><span>'+a+'</span><b>'+b+'</b></div>';
   let h='<p class="hint">Du hängst den Säbel an den Nagel. So erinnert man sich an dich:</p>';
-  h+=row('Rang',rankName())+row('Vermögen',Math.floor(S.gold)+' Gold')+row('Eroberte Häfen',R.own)+row('Versenkte Schiffe',S.sunk)+row('Gefundene Schätze',S.found)+row('Berüchtigte Piraten gefasst',(S.infK||[]).length+'/'+INF.length)+row('Laufbahn-Ziele',(S.camp||0)+'/'+CAMP.length)+(S.wife?row('Ehefrau',S.wife.d):'');
+  h+=row('Rang',rankName())+row('Vermögen',Math.floor(S.gold)+' Gold')+row('Eroberte Häfen',R.own)+row('Versenkte Schiffe',S.sunk)+row('Gefundene Schätze',S.found)+row('Berüchtigte Piraten gefasst',(S.infK||[]).length+'/'+INF.length)+row('Legendäre Piraten besiegt',(S.legK||[]).length+'/'+PLEG.length)+row('Laufbahn-Ziele',(S.camp||0)+'/'+CAMP.length)+(S.wife?row('Ehefrau',S.wife.d):'');
   h+='<div class="kv" style="margin-top:10px;font-size:18px"><span><b>Ruhmespunkte</b></span><b>'+R.sc+'</b></div>'+row('Bestes Ergebnis',best);
   hofAdd();h+=row('Alter',age()+' Jahre')+'<p class="hint" style="margin-top:10px"><b>Ruhmeshalle</b></p>'+hofHTML();
   h+='<div class="btnrow" style="margin-top:12px"><button class="primary" data-act="resume">Doch weiter segeln</button><button data-act="newgame">Neue Fahrt beginnen</button></div>';
@@ -2961,7 +3018,8 @@ function renderPanel(){
       h+='<div class="good"><div class="gname"><b>Matrosen anheuern</b><span>Freie Kojen: '+(cl.maxCrew-S.crew)+'</span></div><div class="gown">'+S.crew+'</div><div class="gbtns" style="grid-template-columns:repeat(4,1fr)"><button data-act="hire:1">+1</button><button data-act="hire:5">+5</button><button data-act="hire:10">+10</button><button data-act="hire:999">Voll</button></div></div>';
       h+='<p class="hint">Offiziere (einmalige Heuer, sie bleiben bei dir)</p>';
       for(const k of Object.keys(OFF)){const O=OFF[k];h+='<div class="item"><div><b>'+O.t+': '+O.nm+'</b><small>'+O.d+(S.off[k]?' · Stufe '+offLv()+' (steigt alle 12 versenkten Schiffe)':'')+'</small></div><button class="primary" data-act="off:'+k+'"'+(S.off[k]?' disabled':'')+'>'+(S.off[k]?'Angeheuert':O.c+' Gold')+'</button></div>'}
-      h+='<div class="item"><div><b>Gerüchte über versteckte Orte</b><small>Ein Seemann verrät für 80 Gold den Standort eines Wracks oder einer Höhle.</small></div><button data-act="rumor">80 Gold</button></div>';
+      if(S.flp)h+=S.flp.known?'<div class="item"><div><b>Schatzflotte</b><small>'+flInfo(S.flp)+'. Die Route ist auf der Karte gestrichelt eingezeichnet. Jedes Schatzschiff bringt über 10.000 Gold.</small></div></div>':'<div class="item"><div><b>Gerücht: Schatzflotte</b><small>Der Wirt weiß, wann und wohin die nächste Gold- oder Silberflotte segelt.</small></div><button class="primary" data-act="flrum">40 Gold</button></div>';
+      h+='<div class="item"><div><b>Gerüchte über versteckte Orte</b><small>Ein Seemann verrät für 80 Gold den Standort eines Wracks oder einer Höhle.</small></div><button data-act="srumor">80 Gold</button></div>';
       h+='<div class="item"><div><b>Runde Rum für die Mannschaft</b><small>Moral: '+morName()+' ('+Math.round(mor())+'/100). Hohe Moral lädt schneller nach und trifft besser, niedrige führt zu Meuterei.</small></div><button class="primary" data-act="rumround">'+Math.max(20,S.crew*5)+' Gold</button></div>';
       h+='<div class="item"><div><b>Gerücht kaufen</b><small>Der Wirt verrät, in welcher Gegend ein Schatz liegt. In der Szene erscheint ein roter Kreis, auf der Karte ebenfalls.</small></div><button class="primary" data-act="rumor">60 Gold</button></div>';
       h+=regHTML(p)+storyHTML('inn',p)+cbHTML(p)+spHTML(p);
@@ -3032,7 +3090,7 @@ function act(e){
   }else if(k==='pl'){plAct(a);
   }else if(k==='cb'){cbAct(a);
   }else if(k==='ttl'){const nx=ttl()+1;if(nx<TTL.length&&repOf(S.nat)>=TTLR[nx]){S.ttl=nx;addMor(5);toast('Der Gouverneur ernennt dich zum '+TTL[nx]+'! Deine Ländereien bringen '+TTLI[nx]+' Gold pro Tag.')}
-  }else if(k==='ui'){const w=a[1];if(w==='view'){$('viewbtn').click()}else if(w==='hudc'){hudCompact(!UI.hudc)}else if(w==='big')UI.big=((UI.big|0)+1)%3;else if(w==='sens')UI.sens=((UI.sens==null?1:UI.sens)+1)%3;else if(w==='eco'){UI.eco=UI.eco?0:1;toast(UI.eco?'Akku-Sparmodus an: 30 Bilder pro Sekunde, geringere Auflösung.':'Akku-Sparmodus aus.')}else if(w==='fs')UI.fs=((UI.fs|0)+1)%3;else if(w==='cb'){UI.cb=UI.cb?0:1;mmCache=null}else if(w==='lh')UI.lh=UI.lh?0:1;else if(w==='vib'){UI.vib=UI.vib?0:1;vib(60)}else if(w==='q')$('btnQ').click();else if(w==='lang')$('btnLang').click();else if(w==='snd')$('sndbtn').click();else if(w==='report'){errReport();return}else if(w==='glw'){UI.glw=UI.glw===0?1:0;toast(UI.glw?'Neue Wassergrafik an.':'Klassische Wassergrafik an.')}else if(w==='tips'){tipSeen={};try{localStorage.removeItem('kk-tips')}catch(e){}toast('Die Tipps erscheinen wieder, wenn sie passen.')}uiApply();
+  }else if(k==='ui'){const w=a[1];if(w==='view'){$('viewbtn').click()}else if(w==='hudc'){hudCompact(!UI.hudc)}else if(w==='big')UI.big=((UI.big|0)+1)%3;else if(w==='sens')UI.sens=((UI.sens==null?1:UI.sens)+1)%3;else if(w==='fps'){UI.fps=UI.fps?0:1;fpsShow()}else if(w==='eco'){UI.eco=UI.eco?0:1;toast(UI.eco?'Akku-Sparmodus an: 30 Bilder pro Sekunde, geringere Auflösung.':'Akku-Sparmodus aus.')}else if(w==='fs')UI.fs=((UI.fs|0)+1)%3;else if(w==='cb'){UI.cb=UI.cb?0:1;mmCache=null}else if(w==='lh')UI.lh=UI.lh?0:1;else if(w==='vib'){UI.vib=UI.vib?0:1;vib(60)}else if(w==='q')$('btnQ').click();else if(w==='lang')$('btnLang').click();else if(w==='snd')$('sndbtn').click();else if(w==='report'){errReport();return}else if(w==='glw'){UI.glw=UI.glw===0?1:0;toast(UI.glw?'Neue Wassergrafik an.':'Klassische Wassergrafik an.')}else if(w==='tips'){tipSeen={};try{localStorage.removeItem('kk-tips')}catch(e){}toast('Die Tipps erscheinen wieder, wenn sie passen.')}uiApply();
   }else if(k==='buyship'){buyPick=+a[1];
   }else if(k==='buyno'){buyPick=null;
   }else if(k==='buyok'){
@@ -3055,12 +3113,13 @@ function act(e){
       else if(w==='lvl'){const c=LVLC[Math.min(2,m.lvl)];if(m.lvl>=3)toast('Schon voll ausgebaut');else if(!costOK(c))toast('Nicht genug Gold');else{costPay(c);m.lvl++;toast(p.n+' ausgebaut: Stufe '+m.lvl)}}
       save();
     }
+  }else if(k==='flrum'){if(!S.flp)return;if(S.gold<40){toast('Nicht genug Gold.');return}S.gold-=40;S.flp.known=1;Snd.coin&&Snd.coin();toast(flInfo(S.flp)+'. Route auf der Karte eingezeichnet.')
   }else if(k==='rumor'){
     const open=S.tr.filter(t=>!t.hint);
     if(S.gold<60)toast('Nicht genug Gold');
     else if(!open.length)toast('Der Wirt zuckt mit den Schultern. Mehr weiß er nicht.');
     else{S.gold-=60;const t=open[0],ang=rnd()*TAU,off=rnd()*70;t.hint={x:t.x+Math.cos(ang)*off,y:t.y+Math.sin(ang)*off,r:150};toast('Ein Schatz liegt am Strand innerhalb des roten Kreises.')}
-  }else if(k==='rumor'){toast(siteRumor())
+  }else if(k==='srumor'){toast(siteRumor())
   }else if(k==='fl'){fleetAct(a)
   }else if(k==='ammo'){
     const kk=a[1],n=+a[2];
@@ -3405,6 +3464,7 @@ function wmDraw(){if(!wmOpen)return;const c=$('wmc'),r=c.getBoundingClientRect()
   g.setLineDash([14,10]);g.lineWidth=4;for(const rt of rts()){const a=portByName(rt.from),b=portByName(rt.to);if(!a||!b)continue;g.strokeStyle='rgba(255,220,120,.8)';g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke()}
   for(const e of enemies){if(!e.conv||e.dead||e.sink>0||!e.dest)continue;g.strokeStyle=hostileNat(e.nat)?'rgba(255,120,90,.8)':'rgba(230,240,250,.6)';g.beginPath();g.moveTo(e.x,e.y);g.lineTo(e.dest.x,e.dest.y);g.stroke()}g.setLineDash([]);
   for(const t of S.tr){if(t.hint){g.strokeStyle='rgba(224,72,58,.9)';g.lineWidth=4;g.beginPath();g.arc(t.hint.x,t.hint.y,t.hint.r,0,TAU);g.stroke()}if(t.map){g.strokeStyle='#ffd04a';g.lineWidth=5;g.beginPath();g.moveTo(t.x-14,t.y-14);g.lineTo(t.x+14,t.y+14);g.moveTo(t.x+14,t.y-14);g.lineTo(t.x-14,t.y+14);g.stroke()}}
+  {const fr=flRoute();if(fr){const kk=Math.max(.02,k);g.setLineDash([12/kk,7/kk]);g.strokeStyle='rgba(150,90,10,.95)';g.lineWidth=3.2/kk;g.beginPath();g.moveTo(fr.a.x,fr.a.y+60);g.lineTo(fr.b.x,fr.b.y+60);g.stroke();g.setLineDash([]);g.font='600 '+Math.round(15/Math.max(.15,k))+'px Georgia,serif';g.textAlign='center';g.lineWidth=4/Math.max(.15,k);g.strokeStyle='rgba(40,24,8,.8)';const mx=(fr.a.x+fr.b.x)/2,my=(fr.a.y+fr.b.y)/2+40;g.strokeText(T_(fr.t),mx,my);g.fillStyle='#ffd04a';g.fillText(T_(fr.t),mx,my)}}
   for(const q of SITES){if(!siteKnown(q))continue;g.fillStyle=q.k==='w'?'#8fe3ff':'#e0a060';g.fillRect(q.x-8,q.y-8,16,16)}
   for(const v of VIL){g.fillStyle='#c9a55a';g.beginPath();g.moveTo(v.x,v.y-14);g.lineTo(v.x-12,v.y+8);g.lineTo(v.x+12,v.y+8);g.fill()}
   if(S.raid){g.strokeStyle='#ff4a3a';g.lineWidth=5;g.beginPath();g.arc(S.raid.x,S.raid.y,26,0,TAU);g.stroke()}
@@ -4349,7 +4409,7 @@ const TUT2=[
 ];
 /* ---------- Leistung: Messpunkte ---------- */
 const PERF={};function perfMark(k,t0){const d=performance.now()-t0;PERF[k]=(PERF[k]||0)*.95+d*.05}
-function chaseNear(){if(mode!=='play'||!P)return false;for(const e of enemies){if(e.dead||e.sink>0||e.t==='m')continue;if((hostileNat(e.nat)||e.hunt||e.rival)&&Math.hypot(e.x-P.x,e.y-P.y)<520)return true}return false}
+function chaseNear(){if(mode!=='play'||!P)return false;for(const e of enemies){if(e.dead||e.sink>0||e.t==='m')continue;if((hostileNat(e.nat)||e.hunt||e.rival||legHos(e))&&Math.hypot(e.x-P.x,e.y-P.y)<520)return true}return false}
 function bannedRow(p,g){const n=S.goods[g]||0;return '<div class="good"><div class="gname"><b>'+gIco(g)+g+'</b><span class="chip hi">verboten</span><span>Hier darf diese Ware nicht gehandelt werden. Unter der Hand zahlt ein Hehler mehr, doch die Wache kontrolliert.</span></div><div class="gown">'+n+'</div><div class="gbtns" style="grid-template-columns:1fr"><button data-act="bsell:'+g+'"'+(n>0?'':' disabled')+'>Unter der Hand verkaufen</button></div></div>'}
 /* ---------- Pausenmenü und Optionen ---------- */
 let optTab='gfx';
@@ -4361,7 +4421,7 @@ function optsHTML(){$('ph').textContent='Optionen';$('psub').textContent='Einste
   const T=[['gfx','Grafik'],['snd','Ton'],['ctl','Steuerung'],['lang','Sprache & Anzeige']];
   $('tabs').innerHTML=T.map(t=>'<button class="tab'+(optTab===t[0]?' on':'')+'" data-act="otab:'+t[0]+'">'+t[1]+'</button>').join('')+'<button class="tab go" data-act="pz:back">Zurück</button>';
   const b=(k,l)=>'<button data-act="ui:'+k+'">'+l+'</button>',grid=x=>'<div class="btnrow" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">'+x+'</div>',sv=UI.sens==null?1:UI.sens;
-  if(optTab==='gfx')return grid(b('q','Qualität: '+QN[Q])+b('glw','Wasser: '+(!GLW?'Klassisch (kein WebGL)':UI.glw===0?'Klassisch':'Neu (WebGL)'))+b('view','Ansicht: '+(V3D?'3D':TK<1?'2.5D':'Von oben'))+b('eco','Akku sparen: '+(UI.eco?'An':'Aus')))+'<p class="hint" style="font-size:12px">„Qualität“ und „Wasser“ beeinflussen, wie flüssig das Spiel läuft. Läuft es zu langsam, senkt das Spiel die Qualität von selbst.</p>';
+  if(optTab==='gfx')return grid(b('q','Qualität: '+QN[Q])+b('fps','Bildrate anzeigen: '+(UI.fps?'An':'Aus'))+b('glw','Wasser: '+(!GLW?'Klassisch (kein WebGL)':UI.glw===0?'Klassisch':'Neu (WebGL)'))+b('view','Ansicht: '+(V3D?'3D':TK<1?'2.5D':'Von oben'))+b('eco','Akku sparen: '+(UI.eco?'An':'Aus')))+'<p class="hint" style="font-size:12px">„Qualität“ und „Wasser“ beeinflussen, wie flüssig das Spiel läuft. Läuft es zu langsam, senkt das Spiel die Qualität von selbst.</p>';
   if(optTab==='snd'){const sl=(k,l,v)=>'<label style="display:block;margin:10px 0 2px"><span style="display:flex;justify-content:space-between"><b>'+l+'</b><span id="vl-'+k+'">'+Math.round(v*100)+' %</span></span><input type="range" min="0" max="100" value="'+Math.round(v*100)+'" data-vol="'+k+'" style="width:100%;accent-color:#e0bb62"></label>';
     return sl('m','Musik',volOf('m'))+sl('s','Effekte',volOf('s'))+sl('a','Umgebung (Wellen, Wind, Möwen)',volOf('a'))+grid(b('snd',sndLabel()))}
   if(optTab==='ctl')return grid(b('sens','Lenkung: '+['Sanft','Normal','Direkt'][sv])+b('big','Knopfgröße: '+['Normal','Groß','Sehr groß'][UI.big|0])+b('lh','Knöpfe: '+(UI.lh?'Links':'Rechts'))+b('vib','Vibration: '+(UI.vib?'An':'Aus')))+'<p class="hint" style="font-size:12px">Auf See zoomst du mit zwei Fingern heran und heraus, am Computer mit dem Mausrad.</p>';
@@ -4424,7 +4484,7 @@ const LTIPS=['Mit dem Wind im Rücken segelst du am schnellsten.','Kaufe dort, w
 const AIM={l:false,r:false};
 function aimWedge(side){const n=P.h+side*Math.PI/2,kd=(S&&S.asel)||'ball',life=(kd==='grape'?.34:.95*RNGL())*(1+.1*Math.cos(angDiff(n,wind.dir))),R=340*life,spr=(kd==='grape'?.25:.1)*xpAcc()*(1+WX.storm*1.6+WX.fog*.3),L=CLS[S.cls].L||40;return{n:n,R:R,spr:spr,L:L}}
 function aimHits(side){const w=aimWedge(side),cs=Math.cos(w.n),sn=Math.sin(w.n);const L=battle?battle.list:enemies;
-  for(const e of L){if(e.dead||e.sink>0)continue;if(!(hostileNat(e.nat)||e.rival||e.hunt||e.siege||inBattle))continue;const dx=e.x-P.x,dy=e.y-P.y,d=dx*cs+dy*sn,o=Math.abs(-dx*sn+dy*cs),er=(ET[e.t].L||40)*.35;if(d>0&&d<w.R+er&&o<w.L*.38+d*Math.tan(w.spr)+er)return true}return false}
+  for(const e of L){if(e.dead||e.sink>0)continue;if(!(hostileNat(e.nat)||e.rival||e.hunt||e.siege||legHos(e)||inBattle))continue;const dx=e.x-P.x,dy=e.y-P.y,d=dx*cs+dy*sn,o=Math.abs(-dx*sn+dy*cs),er=(ET[e.t].L||40)*.35;if(d>0&&d<w.R+er&&o<w.L*.38+d*Math.tan(w.spr)+er)return true}return false}
 function drawAim(g){if(!S||!P||!(mode==='battle'||(mode==='play'&&nearHostilePort)))return;
   for(const side of [-1,1]){const i=side<0?0:1,ready=P.rl[i]<=0,hit=aimHits(side);AIM[side<0?'l':'r']=ready&&hit;if(!ready)continue;
     const w=aimWedge(side),hx=Math.cos(P.h),hy=Math.sin(P.h),cs=Math.cos(w.n),sn=Math.sin(w.n),b=w.L*.35,far=w.R,lat=b+far*Math.tan(w.spr);
@@ -4439,8 +4499,8 @@ window.addEventListener('pointerdown',e=>{if(e.target!==cvs||mode!=='battle'||PH
   let best=null,bd=1e9;for(const q of battle.list){if(q.dead||q.sink>0)continue;const dd=Math.hypot(q.x-wx,q.y-wy);if(dd<bd){bd=dd;best=q}}
   if(!best||bd>120)return;const side=angDiff(Math.atan2(best.y-P.y,best.x-P.x),P.h)>0?1:-1;playerFire(side);e.stopImmediatePropagation()},true);
 /* ---------- Über das Spiel: Credits, Lizenzen, Datenschutz, Versionen ---------- */
-const DEV_NAME='',IMPRINT='';
-const CHANGES=[['1.78','Neue 3D-Ansicht (Knopf „Ansicht“: 2.5D → 3D → 2D): Kamera hinter dem Schiff, im Gefecht Blick über die Schulter zum Gegner; Schiffe als echte Modelle mit Rumpf, Stückpforten, Kanonen, Masten, Rahen, Segeln im Wind, Wanten, Flaggen und Matrosen; Inseln mit Hügeln, Bergen, Palmen und Wäldern; Städte mit Häusern, Kirche, Rathaus, Markt, Werft, Sternfestung und Steg; Wellen, Kielwasser, Tageszeiten mit Sternenhimmel, Regen und Sturm. Außerdem: Schriften fest eingebaut, neuer Klang mit Hall und Instrumenten, Preise für Hafenausbau und Gebäude neu abgestimmt'],['1.77','Alle Bilder neu gemalt: Hafenszenen mit Kolonialfassaden, Markt, Taverne im Abendlicht, Werft mit Schiffsgerippe und Gouverneurspalast; Enterkampf mit echten Schiffsrümpfen und Piraten; Landungsgefecht mit Festung und Beibooten; Zwischensequenzen mit Wolkenhimmel, Meer und Segelschiffen; Titelbild, Seekarte und Deckansicht überarbeitet'],['1.76','Städte im realistischen Stil und gestochen scharf: Walmdächer aus Ziegeln, Pflasterplatz mit Brunnen, Kolonialpalast mit Innenhof, Sternfestung aus Naturstein, Werft mit Spantengerippe; Bedienelemente aus Holz und Messing mit Kompass, Steuerrad, Fernrohr und Kanonen'],['1.75','Meer wie in der echten Karibik: tiefblaue offene See mit funkelnden Lichtreflexen, türkisfarbene Küstengewässer, breite helle Sandstrände mit nasser Kante, üppige Palmen mit gebogenem Stamm und Kokosnüssen'],['1.74','Kanonentürme eigener Städte schießen auf See nur noch, wenn die Stadt angegriffen wird, nicht mehr auf vorbeifahrende Schiffe'],['1.73','Realistischere Grafik: türkisfarbenes Karibikwasser mit Wellenlicht, Windstreifen und längerer Gischtspur, Inseln mit Geländerelief, Schiffe mit sichtbarer Bordwand, Stückpforten und zwei Segelreihen, Wassersäulen bei Fehlschüssen, Feuerbälle bei Treffern, weicher Rauch und leuchtendes Feuer'],['1.72','Säbelduell neu gezeichnet: echte Piratenfiguren mit Mantel, Hut und Säbel, eigene Haltungen für Hiebe, Ducken, Springen und Parieren, Schiffsdeck im Abendlicht, Funken und Hiebspuren'],['1.71','Häfen lassen sich leichter anfahren: größerer Anlegebereich mit sichtbarem Ring und Anker; feindliche Häfen kannst du jetzt auch heimlich anlaufen (nachts und im Nebel leichter)'],['1.70','Unter jedem Stadtnamen steht die Nation mit Flagge und deinem Verhältnis zu ihr; Minikarte und Weltkarte zeigen Nationen, eigene Häfen und Kriegsgegner, die Weltkarte mit Legende'],['1.69','Angreifen-Knopf zeigt die Nation des Schiffs und warnt, wenn ein Angriff Krieg bedeutet; alle Gebäude in eigenen Städten kosten nur noch Gold'],['1.68','Hafenausbau und Kanonentürme kosten wieder nur Gold (wie vor Version 1.66); Baustoffe brauchen nur noch die Gebäude'],['1.67','Grafik überarbeitet: Schiffe mit Takelage, Klüver und Wimpeln, Kielwasser aus Schaum, Häuser mit Giebeldächern, Wolken, Abendlicht, Laternen, Menüs mit Holz und Gold, Bojenkette, Seeschlacht im Hochformat senkrecht, detailliertes Titelschiff'],['1.66','Baustoffe Ziegel, Eisen und Werkzeug; Hafenausbau und Türme brauchen Baustoffe; fünf neue Stadtgebäude'],['1.65','Neuer Name „Sails of Liberty“ mit eigenem Logo, App-Symbol und Titelbild'],['1.64','Zielvorschau in der Seeschlacht, Feuern per Doppeltipp auf den Gegner, Seite „Über das Spiel“ mit Mitwirkenden, Lizenzen, Datenschutz und Versionsübersicht'],['1.63','Pausenmenü, Optionen mit Lautstärkereglern, Symbole für Waren, Zoom mit zwei Fingern, Ladebildschirm, Spielstände mit Vorschau, bessere englische Texte'],
+const DEV_NAME='Smartzone',IMPRINT='';
+const CHANGES=[['1.82','Kapern: Nach einem gewonnenen Enterkampf kannst du das Schiff mit einer Prisenmannschaft in deine Flotte aufnehmen (bis zu 3 Schiffe). Neu sind acht berühmte Piraten der Zeit: Blackbeard, Black Bart, Henry Morgan, Calico Jack mit Anne Bonny und Mary Read, Charles Vane, Black Sam Bellamy, Henry Every und Edward Low. Sie segeln mit Begleitschiffen, halten viel mehr aus, schießen härter und schneller, fliehen nie und bringen hohe Kopfgelder'],['1.81','Schatzflotten werden angekündigt: In den Tavernen spricht man vorher davon, der Wirt verrät für 40 Gold Route und Abfahrtstag, die Route erscheint gestrichelt auf See- und Minikarte. Stürme kündigen sich an: erst eine dunkle Wolkenwand am Horizont mit Himmelsrichtung, auffrischender Wind und höhere Wellen, dann erst der Sturm. Das Gerücht über Wracks und Höhlen in der Taverne funktioniert wieder. Mitwirkende: Smartzone'],['1.80','3D-Ansicht: Wolken mit Schatten auf Meer und Inseln, Hurrikan als drehende Wolkenwand, Möwen, springende Delfine, Leute in den Städten und ein Kraken mit acht Fangarmen. Die Grafikstufe gilt jetzt auch für 3D, unter Optionen > Grafik lässt sich die Bildrate anzeigen, und läuft 3D auf einem Gerät viel zu langsam, wechselt das Spiel von selbst auf 2D'],['1.79','Gold- und Silberflotte kommen seltener (etwa alle 17 bis 27 Tage) und werden von einem Kriegsschiff begleitet. Dafür bringt jedes Schatzschiff über 10.000 Gold, beim Entern wie beim Versenken'],['1.78','Neue 3D-Ansicht (Knopf „Ansicht“: 2.5D → 3D → 2D): Kamera hinter dem Schiff, im Gefecht Blick über die Schulter zum Gegner; Schiffe als echte Modelle mit Rumpf, Stückpforten, Kanonen, Masten, Rahen, Segeln im Wind, Wanten, Flaggen und Matrosen; Inseln mit Hügeln, Bergen, Palmen und Wäldern; Städte mit Häusern, Kirche, Rathaus, Markt, Werft, Sternfestung und Steg; Wellen, Kielwasser, Tageszeiten mit Sternenhimmel, Regen und Sturm. Außerdem: Schriften fest eingebaut, neuer Klang mit Hall und Instrumenten, Preise für Hafenausbau und Gebäude neu abgestimmt'],['1.77','Alle Bilder neu gemalt: Hafenszenen mit Kolonialfassaden, Markt, Taverne im Abendlicht, Werft mit Schiffsgerippe und Gouverneurspalast; Enterkampf mit echten Schiffsrümpfen und Piraten; Landungsgefecht mit Festung und Beibooten; Zwischensequenzen mit Wolkenhimmel, Meer und Segelschiffen; Titelbild, Seekarte und Deckansicht überarbeitet'],['1.76','Städte im realistischen Stil und gestochen scharf: Walmdächer aus Ziegeln, Pflasterplatz mit Brunnen, Kolonialpalast mit Innenhof, Sternfestung aus Naturstein, Werft mit Spantengerippe; Bedienelemente aus Holz und Messing mit Kompass, Steuerrad, Fernrohr und Kanonen'],['1.75','Meer wie in der echten Karibik: tiefblaue offene See mit funkelnden Lichtreflexen, türkisfarbene Küstengewässer, breite helle Sandstrände mit nasser Kante, üppige Palmen mit gebogenem Stamm und Kokosnüssen'],['1.74','Kanonentürme eigener Städte schießen auf See nur noch, wenn die Stadt angegriffen wird, nicht mehr auf vorbeifahrende Schiffe'],['1.73','Realistischere Grafik: türkisfarbenes Karibikwasser mit Wellenlicht, Windstreifen und längerer Gischtspur, Inseln mit Geländerelief, Schiffe mit sichtbarer Bordwand, Stückpforten und zwei Segelreihen, Wassersäulen bei Fehlschüssen, Feuerbälle bei Treffern, weicher Rauch und leuchtendes Feuer'],['1.72','Säbelduell neu gezeichnet: echte Piratenfiguren mit Mantel, Hut und Säbel, eigene Haltungen für Hiebe, Ducken, Springen und Parieren, Schiffsdeck im Abendlicht, Funken und Hiebspuren'],['1.71','Häfen lassen sich leichter anfahren: größerer Anlegebereich mit sichtbarem Ring und Anker; feindliche Häfen kannst du jetzt auch heimlich anlaufen (nachts und im Nebel leichter)'],['1.70','Unter jedem Stadtnamen steht die Nation mit Flagge und deinem Verhältnis zu ihr; Minikarte und Weltkarte zeigen Nationen, eigene Häfen und Kriegsgegner, die Weltkarte mit Legende'],['1.69','Angreifen-Knopf zeigt die Nation des Schiffs und warnt, wenn ein Angriff Krieg bedeutet; alle Gebäude in eigenen Städten kosten nur noch Gold'],['1.68','Hafenausbau und Kanonentürme kosten wieder nur Gold (wie vor Version 1.66); Baustoffe brauchen nur noch die Gebäude'],['1.67','Grafik überarbeitet: Schiffe mit Takelage, Klüver und Wimpeln, Kielwasser aus Schaum, Häuser mit Giebeldächern, Wolken, Abendlicht, Laternen, Menüs mit Holz und Gold, Bojenkette, Seeschlacht im Hochformat senkrecht, detailliertes Titelschiff'],['1.66','Baustoffe Ziegel, Eisen und Werkzeug; Hafenausbau und Türme brauchen Baustoffe; fünf neue Stadtgebäude'],['1.65','Neuer Name „Sails of Liberty“ mit eigenem Logo, App-Symbol und Titelbild'],['1.64','Zielvorschau in der Seeschlacht, Feuern per Doppeltipp auf den Gegner, Seite „Über das Spiel“ mit Mitwirkenden, Lizenzen, Datenschutz und Versionsübersicht'],['1.63','Pausenmenü, Optionen mit Lautstärkereglern, Symbole für Waren, Zoom mit zwei Fingern, Ladebildschirm, Spielstände mit Vorschau, bessere englische Texte'],
  ['1.62','Neue Waren mit Spezialitäten und Verboten, Hurrikan-Saison, Mannschaftserfahrung, Gegner mit Taktik, Landschlacht-Taktiken, Schiffsdeck, mehr Musik, geführte erste Fahrt'],
  ['1.61','Grafischer Feinschliff: Anzeige, Meldungen, Titelbild, Spuren der Kanonenkugeln'],
  ['1.60','Geleitschutz, Passagiere, Depeschen, Kopfgeldjagd, Diplomatie und Kaperbriefe'],
@@ -4899,11 +4959,11 @@ const WAV=[[.8,.6,.045,1.1,1.6],[-.5,.86,.07,1.5,.9],[.2,-.98,.11,2,.5],[.97,-.2
 function waveH(x,z,t,a){let h=0;for(const w of WAV)h+=w[4]*Math.sin((w[0]*x+w[1]*z)*w[2]+t*w[3]);return h*a}
 function mkWater(){
   waterU={uT:{value:0},uA:{value:1},uLand:{value:null},uLM:{value:new T.Vector4()},uNrm:{value:nrmTex},uNz:{value:nzTex},uCam:{value:new T.Vector3()},uSun:{value:new T.Vector3(0,1,0)},uSunC:{value:new T.Color()},uHor:{value:new T.Color()},uZen:{value:new T.Color()},
-    uDeep:{value:new T.Color()},uShal:{value:new T.Color()},uAmb:{value:new T.Color()},uFogC:{value:new T.Color()},uFogN:{value:500},uFogF:{value:1700},uStorm:{value:0},uWk:{value:[]},uWk2:{value:[]},uWn:{value:0},uLOk:{value:0},uDecal:{value:0}};
+    uDeep:{value:new T.Color()},uShal:{value:new T.Color()},uAmb:{value:new T.Color()},uFogC:{value:new T.Color()},uFogN:{value:500},uFogF:{value:1700},uStorm:{value:0},uWk:{value:[]},uWk2:{value:[]},uWn:{value:0},uLOk:{value:0},uDecal:{value:0},uCld:{value:[]}};for(let i=0;i<10;i++)waterU.uCld.value.push(new T.Vector4(0,0,1,0));
   for(let i=0;i<10;i++){waterU.uWk.value.push(new T.Vector4());waterU.uWk2.value.push(new T.Vector4())}
   const m=new T.ShaderMaterial({uniforms:waterU,fog:false,
     vertexShader:WGL+'varying vec3 vW;void main(){vec4 wp=modelMatrix*vec4(position,1.);vec3 w=wv(wp.xz);wp.y+=w.x;vW=wp.xyz;gl_Position=projectionMatrix*viewMatrix*wp;}',
-    fragmentShader:WGL+'uniform sampler2D uLand,uNrm,uNz;uniform vec4 uLM;uniform vec3 uCam,uSun,uSunC,uHor,uZen,uDeep,uShal,uAmb,uFogC;uniform float uFogN,uFogF,uStorm,uLOk;uniform vec4 uWk[10];uniform vec4 uWk2[10];uniform int uWn;varying vec3 vW;\n'+
+    fragmentShader:WGL+'uniform sampler2D uLand,uNrm,uNz;uniform vec4 uLM;uniform vec3 uCam,uSun,uSunC,uHor,uZen,uDeep,uShal,uAmb,uFogC;uniform float uFogN,uFogF,uStorm,uLOk;uniform vec4 uWk[10];uniform vec4 uWk2[10];uniform int uWn;uniform vec4 uCld[10];varying vec3 vW;\n'+
     'void main(){vec2 p=vW.xz;vec3 w=wv(p);float dist=length(uCam-vW);float df=1.-smoothstep(250.,1100.,dist);'+
     'vec2 q=p*.0115;vec3 n1=texture2D(uNrm,q+vec2(uT*.011,uT*.007)).xyz*2.-1.;vec3 n2=texture2D(uNrm,q*2.6-vec2(uT*.016,-uT*.010)).xyz*2.-1.;vec3 n3=texture2D(uNrm,q*7.3+vec2(uT*.03,uT*.021)).xyz*2.-1.;'+
     'vec2 dn=(n1.xy*.55+n2.xy*.35+n3.xy*.25*df)*(.28+.32*uStorm+.12*uA);vec3 N=normalize(vec3(-w.y-dn.x,1.,-w.z-dn.y));'+
@@ -4924,17 +4984,19 @@ function mkWater(){
     'if(tb>0.){float arm=abs(la2-tb*.34-b.y*.55);fo+=b.x*exp(-tb/(b.z*2.))*exp(-arm*arm/(1.2+tb*.05))*(.2+.8*smoothstep(.3,.7,nz))*.8;}'+
     'if(al<-b.z*.3&&al>-b.z*.62){fo+=b.x*smoothstep(b.y*1.3,b.y*.6,la2)*.5;}}}'+
     'fo=clamp(fo,0.,1.);col=mix(col,vec3(.95,.98,1.)*(uAmb*.6+uSunC*.5+.15),fo*.85);'+
+    'float cs=0.;for(int i=0;i<10;i++){vec4 c=uCld[i];if(c.w<=0.)continue;float d=length(p-c.xy)/c.z;cs+=c.w*(1.-smoothstep(.3,1.,d));}col*=1.-clamp(cs,0.,.7)*.42;'+
     'float ff=smoothstep(uFogN,uFogF,dist);col=mix(col,uFogC,ff);gl_FragColor=vec4(col,1.);}'});
   const g=new T.PlaneGeometry(3800,3800,170,170);g.rotateX(-Math.PI/2);water=new T.Mesh(g,m);water.frustumCulled=false;scene.add(water)}
 /* ---- Inselnetz ---- */
 const RINGS=[.15,.32,.48,.6,.7,.78,.835,.87,.91,.945,.97,.995,1.04,1.12,1.22],RINGS_S=[.3,.6,.8,.86,.92,.96,.995,1.06,1.2];
-let landMeshes=[];
+let landMeshes=[],landU=null;
 function buildLand(){
   for(const m of landMeshes){scene.remove(m);m.geometry.dispose()}landMeshes=[];
   const cells=new Map();for(const o of ISL){const k=Math.floor(o.x/1100)+','+Math.floor(o.y/1100);if(!cells.has(k))cells.set(k,[]);cells.get(k).push(o)}
   if(!landTex){landTex=new T.CanvasTexture(landC);landTex.flipY=false;landTex.anisotropy=Math.min(8,ren.capabilities.getMaxAnisotropy());landTex.generateMipmaps=true}
   const m=new T.MeshLambertMaterial({map:landTex,vertexColors:true});
-  m.onBeforeCompile=sh=>{sh.uniforms.uDet={value:nzTex};sh.fragmentShader='uniform sampler2D uDet;\n'+sh.fragmentShader.replace('#include <map_fragment>','vec4 tC=texture2D(map,vUv);diffuseColor.rgb*=mix(vec3(.82,.76,.58),tC.rgb,clamp(tC.a*1.2,0.,1.));diffuseColor.rgb*=.86+.28*texture2D(uDet,vUv*42.).b;')};
+  if(!landU){landU={uCld:{value:[]}};for(let i=0;i<10;i++)landU.uCld.value.push(new T.Vector4(0,0,1,0))}
+  m.onBeforeCompile=sh=>{sh.uniforms.uDet={value:nzTex};sh.uniforms.uCld=landU.uCld;sh.vertexShader='varying vec3 vW3;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvW3=(modelMatrix*vec4(transformed,1.)).xyz;');sh.fragmentShader='uniform sampler2D uDet;uniform vec4 uCld[10];varying vec3 vW3;\n'+sh.fragmentShader.replace('#include <map_fragment>','vec4 tC=texture2D(map,vUv);diffuseColor.rgb*=mix(vec3(.82,.76,.58),tC.rgb,clamp(tC.a*1.2,0.,1.));diffuseColor.rgb*=.86+.28*texture2D(uDet,vUv*42.).b;float cs3=0.;for(int i=0;i<10;i++){vec4 c=uCld[i];if(c.w<=0.)continue;float d=length(vW3.xz-c.xy)/c.z;cs3+=c.w*(1.-smoothstep(.3,1.,d));}diffuseColor.rgb*=1.-clamp(cs3,0.,.7)*.45;')};
   for(const [,L] of cells){const g=landGeo(L);const lm=new T.Mesh(g,m);scene.add(lm);landMeshes.push(lm)}landMesh=landMeshes[0]||null;
   waterU.uLand.value=landTex;waterU.uLM.value.set(LSC/LW,LM*LSC/LW,LSC/LH,LM*LSC/LH)}
 function landGeo(LIST){
@@ -5268,7 +5330,7 @@ function env(){const L=todLight(),ph=todPhase(),eve=ph>.5,warm=Math.max(0,1-Math
   const e=Math.sin(TAU*(ph-.25)),az=TAU*ph+.6,day=e>-.05,el=day?Math.max(.06,e)*1.1:Math.max(.25,-e*.8),sd=new T.Vector3(Math.cos(az)*Math.cos(el),Math.sin(el),Math.sin(az)*Math.cos(el));if(!day)sd.set(-sd.x,sd.y,-sd.z);sd.normalize();
   const sc=day?cmix([1,.97,.9],[1,.62,.34],warm*.85).map(v=>v*(.35+.75*Math.min(1,e*3+.2))*(1-st*.7-rn*.25)):[.42,.5,.72].map(v=>v*.42);
   skyU.uZen.value.setRGB(...Z);skyU.uHor.value.setRGB(...H);skyU.uSun.value.copy(sd);skyU.uSunC.value.setRGB(...(day?sc:sc.map(v=>v*.6)));skyU.uT.value=CT;skyU.uCl.value=clamp(.35+st*.65+rn*.4,0,1);skyU.uN.value=clamp(1-L*2.2,0,1)*(1-st);skyU.uDk.value=st*.8+rn*.3;
-  fogC.setRGB(...H);const ff=Math.max(WX.fog||0,(P&&S&&mode!=='title')?fogAt(P.x,P.y):0);scene.fog.far=lerp(1750,320,ff)*(1-st*.3-rn*.15);scene.fog.near=scene.fog.far*lerp(.3,.08,ff);
+  fogC.setRGB(...H);const ff=Math.max(WX.fog||0,(P&&S&&mode!=='title')?fogAt(P.x,P.y):0);scene.fog.far=lerp([1300,1550,1750][Q],320,ff)*(1-st*.3-rn*.15);scene.fog.near=scene.fog.far*lerp(.3,.08,ff);
   ren.setClearColor(fogC);
   hemi.color.setRGB(...cmix(Z,[1,1,1],.5));hemi.groundColor.setRGB(...cmix([.3,.32,.26],H,.3).map(v=>v*(.4+.6*L)));hemi.intensity=(.32+.5*L)*(1+fl*1.5);
   sun.color.setRGB(...sc);sun.intensity=day?1:.55;sun.position.set(cam.position.x+sd.x*800,sd.y*800,cam.position.z+sd.z*800);sun.target.position.set(cam.position.x,0,cam.position.z);
@@ -5386,11 +5448,11 @@ function townArena3(){const bt=battle;if(!inBattle||!bt||!bt.town||!townArena){i
 let krIM=null;
 function world(dt,na){dynN=0;const A=waterU.uA.value,wk=[];
   const ship=(obj,x,y,h,L,hc,sc,nat,fc,masts,cn,o,fig)=>{if(!vis3(x,y,L*2))return null;const i=shipFor(obj,L,Math.max(1,masts),hc,sc,nat,fc,cn,fig,o.ghost);poseShip(i,x,y,h,o);
-    if(wk.length<10&&(o.v||0)>6&&!(o.sink>0))wk.push([x,y,h,Math.min(1,(o.v||0)/80),i.t.B*.5,i.t.L3]);dmgSmoke(i,x,y,o.dmg||0,dt);return i};
+    if(wk.length<[4,7,10][Q]&&(o.v||0)>6&&!(o.sink>0))wk.push([x,y,h,Math.min(1,(o.v||0)/80),i.t.B*.5,i.t.L3]);dmgSmoke(i,x,y,o.dmg||0,dt);return i};
   const lamps=[];
   if(S&&P&&mode!=='dead'){const cl=CLS[S.cls],lk=look();const i=ship(P,P.x,P.y,P.h,cl.L,cl.hc,SAILC[lk.s][0],S.nat,natFlag(S.nat,0xe0483a),(cl.masts||2)-(P.mb||0),cl.cannons,{v:P.v,sail:P.sail*(1-.6*(P.tear||0)),turn:P.turnS||0,flut:P.sail>.1?Math.min(1,Math.abs(P.turnS||0)*.9+(1-Math.min(1,wind.str))*.35):0,tear:P.tear||0,dmg:clamp(1-S.hull/cl.hull,0,1)},lk.f);if(i)lamps.push(i)}
-  if(S&&P)for(const e of enemies){if(e.dead||eHidden(e))continue;if(e.kraken){kraken3(e);continue}const d=ET[e.t],sk=e.sink>0,k=sk?clamp(e.sink/2.6,0,1):0;
-    const i=ship(e,e.x,e.y,e.h,d.L,e.inf!==undefined?0x050506:d.hc,d.sail,e.nat,natFlag(e.nat,d.flag),mastsFor(d.L)-(e.mb||0),d.cannons,{v:sk?0:e.v,sail:sk?.3:1-.6*(e.tear||0),turn:sk?0:e.turnS||0,flut:Math.abs(e.turnS||0)*.8,tear:e.tear||0,sink:k,ghost:!!e.ghost,alpha:e.ghost?.6:1,dmg:sk?0:clamp(1-e.hull/(e.mh||d.hull),0,1)});if(i&&!sk)lamps.push(i)}
+  if(S&&P)for(const e of enemies){if(e.dead||eHidden(e))continue;if(e.kraken)continue;const d=ET[e.t],sk=e.sink>0,k=sk?clamp(e.sink/2.6,0,1):0;
+    const i=ship(e,e.x,e.y,e.h,d.L,e.lhc!==undefined?e.lhc:e.inf!==undefined?0x050506:d.hc,e.lsc!==undefined?e.lsc:d.sail,e.nat,natFlag(e.nat,d.flag),mastsFor(d.L)-(e.mb||0),d.cannons,{v:sk?0:e.v,sail:sk?.3:1-.6*(e.tear||0),turn:sk?0:e.turnS||0,flut:Math.abs(e.turnS||0)*.8,tear:e.tear||0,sink:k,ghost:!!e.ghost,alpha:e.ghost?.6:1,dmg:sk?0:clamp(1-e.hull/(e.mh||d.hull),0,1)});if(i&&!sk)lamps.push(i)}
   if(S&&P&&(mode==='play'||mode==='battle'))for(const a of ALL){const d=fdef(a.r),sk=a.sink>0,k=sk?clamp(a.sink/2.6,0,1):0;const i=ship(a,a.x,a.y,a.h,d.L,d.hc,0xefe3c6,S.nat,natFlag(S.nat,0xe0483a),d.masts,d.cannons,{v:sk?0:a.v,sink:k,dmg:clamp(1-a.r.hull/d.hull,0,1),turn:a.turnS||0});if(i&&!sk)lamps.push(i)}
   if(!inBattle)for(const t of towns){const p=t.p;if(!vis3(p.x,p.y,300)||Math.hypot(p.x-cam.position.x,p.y-cam.position.z)>1000)continue;for(const d of t.dock)ship(d,d.x,d.y,d.h,d.L,d.hc,0xefe3c6,p.f0,natFlag(p.f0,0xe0483a),d.m,3,{sail:0,still:1,v:0})}
   for(let k=0;k<10;k++){const v=waterU.uWk.value[k],v2=waterU.uWk2.value[k],w=wk[k];if(w){v.set(w[0],w[1],Math.cos(w[2]),Math.sin(w[2]));v2.set(w[3],w[4],w[5],0)}}waterU.uWn.value=wk.length;
@@ -5451,9 +5513,9 @@ function labels(g){const fade=d=>clamp((1400-d)/400,0,1);
   for(const e of enemies){if(e.dead||e.sink>0||eHidden(e))continue;const i=SH.get(e);if(e.kraken){const q=pjh(e.x,70,e.y);if(q){hpBar(g,q.x,q.y,90,e.hull/(e.mh||420),'#cf4333');scrK(()=>TXT0(g,'Der Kraken',q.x,q.y-14,13*1.3,'#ff8ad0'))}continue}
     if(!i)continue;const d=ET[e.t],q=pjh(e.x,i.t.mastTop+8,e.y);if(!q)continue;const dd=Math.hypot(e.x-P.x,e.y-P.y);let yy=q.y;
     if(e.hull<(e.mh||d.hull)){hpBar(g,q.x,yy,Math.max(34,d.L*.8),e.hull/(e.mh||d.hull),'#cf4333');yy-=10}
-    if(dd<1100){NB0(g,q.x,yy-6,e.nat,hostileNat(e.nat),11);yy-=20}
+    if(dd<1100){NB0(g,q.x,yy-6,e.nat,hostileNat(e.nat)||legHos(e),11);yy-=20}
     let nm=null,col='#ff9a5a';if(e.spc){nm=e.nm;col='#d9a0ff'}if(e.rival||e.story||e.hunt||e.esc||e.qh)nm=e.nm+(e.story?' · Hauptgeschichte':e.hunt?' · Kopfgeldjäger':e.esc?' · Geleitschiff':e.qh?' · Gesucht':' · Rivale');
-    if(e.inf!==undefined){nm=e.nm+' · '+infD(e.inf).b+' Gold';col='#ff6a5a'}if(e.t==='f'){nm=e.cargo==='Gold'?'Goldschiff':'Silberschiff';col=e.cargo==='Gold'?'#ffd04a':'#dfe6ee'}
+    if(e.inf!==undefined){nm=e.nm+' · '+infD(e.inf).b+' Gold';col='#ff6a5a'}if(e.leg!==undefined){nm='☠ '+e.nm+' · '+PLEG[e.leg].s;col='#ff4a3a'}if(e.t==='f'){nm=e.cargo==='Gold'?'Goldschiff':'Silberschiff';col=e.cargo==='Gold'?'#ffd04a':'#dfe6ee'}
     if(nm)scrK(()=>TXT0(g,nm,q.x,yy,11*1.3,col))}
   for(const a of ALL){if(a.sink>0)continue;const d=fdef(a.r),i=SH.get(a);if(!i||a.r.hull>=d.hull)continue;const q=pjh(a.x,i.t.mastTop+8,a.y);if(q)hpBar(g,q.x,q.y,Math.max(34,d.L*.8),a.r.hull/d.hull,'#4fbf6a')}
   if(S.look&&S.look.n&&mode!=='dead'){const q=pjh(P.x,0,P.y);if(q&&q.y<CH-60)scrK(()=>TXT0(g,S.look.n,q.x,q.y+18,10*1.3,'#fff3c8'))}
@@ -5467,13 +5529,82 @@ function weather3(g){g.setTransform(DPR,0,0,DPR,0,0);const cw=CW,ch=CH;
   if(WX.rain>.02){const R=WX.rain;g.strokeStyle='rgba(215,230,245,'+(.32*R).toFixed(3)+')';g.lineWidth=1;g.beginPath();for(let i=0;i<80;i++){const x=((i*89.3+CT*70)%(cw+60))-30,y=((i*61.7+CT*430)%(ch+50))-25;g.moveTo(x,y);g.lineTo(x-3,y+12)}g.stroke()}
   if(WX.flash>0){g.fillStyle='rgba(255,255,255,'+(WX.flash*.6).toFixed(2)+')';g.fillRect(0,0,cw,ch)}
   const vg=g.createRadialGradient(cw/2,ch/2,Math.min(cw,ch)*.4,cw/2,ch/2,Math.max(cw,ch)*.78);vg.addColorStop(0,'rgba(0,10,25,0)');vg.addColorStop(1,'rgba(0,8,22,.26)');g.fillStyle=vg;g.fillRect(0,0,cw,ch)}
+/* ---- Leben in 3D: Wolken mit Schatten, Hurrikan-Wolkenwand, Möwen, Delfine, Leute in den Städten, Kraken ---- */
+let cloudPts=null,cloudG=null,C3=[],birdIM=null,B3=[],dolIM=null,D3=[],pplIM=null,tentIM=null,kBody=null,kEyes=null,lifeOk=false;
+function lifeInit(){lifeOk=true;
+  cloudG=ptGeo(900);const cm=ptMat(puffTex,false);cm.vertexShader=cm.vertexShader.replace('min(aSz*uPx/max(-mv.z,1.),512.)','min(aSz*uPx/max(-mv.z,1.),2048.)');cloudPts=new T.Points(cloudG,cm);cloudPts.frustumCulled=false;cloudPts.renderOrder=7;scene.add(cloudPts);
+  const rs=mulberry(321);for(let i=0;i<26;i++){const pf=[];const n=6+Math.floor(rs()*5);for(let k=0;k<n;k++)pf.push([(rs()-.5)*150,(rs()-.3)*28,(rs()-.5)*80,55+rs()*55,.8+rs()*.25]);C3.push({x:(rs()-.5)*3200,y:(rs()-.5)*3200,alt:240+rs()*90,s:.7+rs()*.7,pf:pf,on:rs()})}
+  {const b=GB();b.box(-1.6,-.35,-.35,1.6,.35,.35,[.95,.95,.93]);b.tri([-.3,0,0],[.5,0,0],[0,1.6,4.6],[.98,.98],[.98,.98],[.98,.98],[.92,.92,.9]);b.tri([.5,0,0],[-.3,0,0],[0,1.6,-4.6],[.98,.98],[.98,.98],[.98,.98],[.92,.92,.9]);b.tri([0,1.6,4.6],[.4,1.2,4.6],[0,1.4,6],[.98,.98],[.98,.98],[.98,.98],[.2,.2,.22]);b.tri([.4,1.2,-4.6],[0,1.6,-4.6],[0,1.4,-6],[.98,.98],[.98,.98],[.98,.98],[.2,.2,.22]);b.box(1.6,-.15,-.15,2.2,.15,.15,[.95,.75,.2]);
+    birdIM=new T.InstancedMesh(b.build(),new T.MeshLambertMaterial({map:ATL,vertexColors:true,side:T.DoubleSide,emissive:0x8a8a88}),30);birdIM.count=0;birdIM.frustumCulled=false;scene.add(birdIM);
+    for(let i=0;i<30;i++)B3.push({a:rs()*TAU,r:60+rs()*180,h:35+rs()*50,sp:(.25+rs()*.3)*(rs()<.5?1:-1),ph:rs()*10,cx:0,cy:0,g:Math.floor(i/6)})}
+  {const b=GB(),m=M4();m.scale(new T.Vector3(5,1.3,1.4));b.geo(new T.SphereGeometry(1,10,6),m,[.42,.46,.52]);b.tri([0,1,0],[-1.6,1,0],[-.8,3.2,0],[.98,.98],[.98,.98],[.98,.98],[.38,.42,.48]);b.tri([-4.6,0,0],[-6,.4,1.6],[-6,.4,-1.6],[.98,.98],[.98,.98],[.98,.98],[.38,.42,.48]);
+    dolIM=new T.InstancedMesh(b.build(),new T.MeshLambertMaterial({map:ATL,vertexColors:true,side:T.DoubleSide}),4);dolIM.count=0;dolIM.frustumCulled=false;scene.add(dolIM)}
+  {const b=GB();b.box(-.45,0,-.3,.45,1.4,.3,[1,1,1]);b.box(-.4,1.4,-.25,.4,2.1,.25,[1,1,1]);b.box(-.35,2.1,-.35,.35,2.85,.35,[.86,.68,.52]);b.box(-.4,2.75,-.4,.4,2.95,.4,[.3,.22,.15]);
+    pplIM=new T.InstancedMesh(b.build(),new T.MeshLambertMaterial({map:ATL,vertexColors:true}),90);pplIM.count=0;pplIM.frustumCulled=false;pplIM.setColorAt(0,new T.Color());scene.add(pplIM)}
+  {const g=cyl(1,1,1,7,true);tentIM=new T.InstancedMesh(g,new T.MeshLambertMaterial({color:0xffffff}),200);tentIM.count=0;tentIM.frustumCulled=false;tentIM.setColorAt(0,new T.Color());scene.add(tentIM);
+    const bm=new T.MeshLambertMaterial({color:0x6a2a52});kBody=new T.Mesh(new T.SphereGeometry(1,20,14,0,TAU,0,Math.PI*.62),bm);kBody.visible=false;scene.add(kBody);
+    const eb=GB();for(const s of[-1,1]){eb.geo(new T.SphereGeometry(4.4,10,8),M4().makeTranslation(s*10,0,0),[1,.82,.25]);eb.geo(new T.SphereGeometry(2,8,6),M4().makeTranslation(s*10,0,3.4),[.02,.02,.02])}kEyes=new T.Mesh(eb.build(),new T.MeshBasicMaterial({vertexColors:true}));kEyes.visible=false;scene.add(kEyes)}}
+const CLDU=[];
+function life(dt,E){if(!lifeOk)lifeInit();const cx0=cam.position.x,cz0=cam.position.z,dk=clamp(Math.max(WX.storm,WX.rain*.85),0,1),L=E.L,A=waterU.uA.value;
+  /* Wolken: Menge nach Wetter, ziehen mit dem Wind, wickeln um die Kamera */
+  const pS=cloudG.attributes.position.array,zS=cloudG.attributes.aSz.array,cS=cloudG.attributes.aC.array;let n=0;const cover=clamp(.3+dk*.7+(WX.fog||0)*.2,0,1),wd=Math.cos(wind.dir),wy=Math.sin(wind.dir),spd=(6+14*wind.str+26*WX.storm)*dt,lc=.45+.55*L;CLDU.length=0;
+  const col=cmix([1,1,1],[.42,.45,.5],dk).map(v=>v*lc),shd=cmix([.78,.8,.86],[.3,.32,.36],dk).map(v=>v*lc);
+  for(const c of C3){c.x+=wd*spd*c.s;c.y+=wy*spd*c.s;if(c.x-cx0>1700)c.x-=3400;if(c.x-cx0<-1700)c.x+=3400;if(c.y-cz0>1700)c.y-=3400;if(c.y-cz0<-1700)c.y+=3400;if(c.on>cover+.15||Q===0&&c.on>cover)continue;
+    const a=clamp((cover+.15-c.on)*4,0,1)*(inBattle?.8:1);for(const p of c.pf){if(n>=880)break;pS[n*3]=c.x+p[0]*c.s;pS[n*3+1]=c.alt+p[1]*c.s;pS[n*3+2]=c.y+p[2]*c.s;zS[n]=p[3]*c.s*2.2;const k=clamp(p[1]/28+.5,0,1);cS[n*4]=lerp(shd[0],col[0],k)*p[4];cS[n*4+1]=lerp(shd[1],col[1],k)*p[4];cS[n*4+2]=lerp(shd[2],col[2],k)*p[4];cS[n*4+3]=a*.85;n++}
+    if(CLDU.length<10)CLDU.push([c.x+(Math.cos(wind.dir)*c.alt*.25),c.y+(Math.sin(wind.dir)*c.alt*.25),95*c.s,a*(.55+dk*.3)*sm(.15,.6,L)])}
+  /* Sturmfront: dunkle Wolkenwand am Horizont in Richtung des Sturms */
+  if((WX.warn||0)>.02){const a0=WX.sdir||0,w=WX.warn,D=lerp(1350,700,w);for(let k=0;k<(Q?150:80)&&n<900;k++){const f=k/(Q?150:80),a=a0+(f-.5)*1.5+Math.sin(k*2.3)*.05,h=((k*53)%100)/100,dd=D+((k*31)%100)-50;pS[n*3]=cx0+Math.cos(a)*dd;pS[n*3+1]=20+h*260;pS[n*3+2]=cz0+Math.sin(a)*dd;zS[n]=150+(k%4)*40;const v=(.18+.18*h)*lc;cS[n*4]=v;cS[n*4+1]=v*1.04;cS[n*4+2]=v*1.15;cS[n*4+3]=.9*w;n++}}
+  /* Hurrikan: dunkle Wolkenwand, die sich um das Auge dreht */
+  const hu=S&&S.hur;if(hu&&!inBattle&&Math.hypot(hu.x-cx0,hu.y-cz0)<hu.r+1800){const R=hu.r;for(let k=0;k<(Q?140:70)&&n<900;k++){const f=k/(Q?140:70),a=hu.a*1.6+f*TAU*3+Math.sin(k*1.7)*.3,rr=R*(.25+.75*((k*37)%100)/100),h=30+((k*53)%100)/100*170;pS[n*3]=hu.x+Math.cos(a+rr*.004)*rr;pS[n*3+1]=h;pS[n*3+2]=hu.y+Math.sin(a+rr*.004)*rr;zS[n]=110+(k%5)*20;const v=(.28+.2*((k*13)%10)/10)*lc;cS[n*4]=v;cS[n*4+1]=v*1.03;cS[n*4+2]=v*1.12;cS[n*4+3]=.8;n++}}
+  cloudG.setDrawRange(0,n);cloudG.attributes.position.needsUpdate=true;cloudG.attributes.aSz.needsUpdate=true;cloudG.attributes.aC.needsUpdate=true;
+  {const m=cloudPts.material.uniforms;m.uPx.value=CH*Math.min(DPR,PRQ())/(2*Math.tan(cam.fov*Math.PI/360));m.uFogC.value.copy(fogC);m.uFogN.value=scene.fog.near*1.6;m.uFogF.value=scene.fog.far*1.9}
+  for(let i=0;i<10;i++){const v=waterU.uCld.value[i],c=CLDU[i];if(c)v.set(c[0],c[1],c[2],c[3]);else v.set(0,0,1,0)}
+  if(landU)for(let i=0;i<10;i++)landU.uCld.value[i].copy(waterU.uCld.value[i]);
+  /* Möwen kreisen am Tag über dem Schiff und über Häfen */
+  {let nb=0;const m=new T.Matrix4(),q=new T.Quaternion(),e=new T.Euler(),s=new T.Vector3(),v=new T.Vector3();if(Q>0&&L>.35&&WX.storm<.5&&S&&P&&!inBattle){
+      let hp=null,bd=500;for(const p of PORTS){const d=Math.hypot(p.x-P.x,p.y-P.y);if(d<bd){bd=d;hp=p}}
+      for(const b of B3){const grp=b.g;if(grp>=(Q>1?5:3))continue;let cx=P.x,cy=P.y;if(grp>=2&&hp){cx=hp.x;cy=hp.y-30}else if(grp===1){cx=P.x-Math.cos(P.h)*60;cy=P.y-Math.sin(P.h)*60}
+        b.a+=b.sp*dt;b.ph+=dt*(5+Math.sin(b.a*3)*2);const x=cx+Math.cos(b.a)*b.r,y=cy+Math.sin(b.a)*b.r*.8,h=b.h+Math.sin(b.a*2+b.ph*.1)*8,fl=Math.sin(b.ph);
+        e.set(Math.sin(b.a*1.3)*.35*Math.sign(b.sp),-(b.a+Math.sign(b.sp)*Math.PI/2),0,'YXZ');q.setFromEuler(e);m.compose(v.set(x,h,y),q,s.set(1.1,fl>-.2?.4+fl*.9:.2,1.1));birdIM.setMatrixAt(nb++,m)}}
+    birdIM.count=nb;birdIM.instanceMatrix.needsUpdate=true}
+  /* Delfine springen ab und zu neben dem Bug */
+  {let nd=0;const m=new T.Matrix4(),q=new T.Quaternion(),e=new T.Euler(),s=new T.Vector3(1,1,1),v=new T.Vector3();if(Q>0&&L>.3&&S&&P&&mode==='play'&&P.v>20){
+      if(D3.length<3&&Math.random()<dt*.12){const sd=Math.random()<.5?1:-1,k=D3.length;D3.push({t:0,sd:sd,o:30+Math.random()*30,f:40+k*18,dl:k*.35})}
+      for(let i=D3.length-1;i>=0;i--){const d=D3[i];d.t+=dt;const tt=(d.t-d.dl)/1.3;if(tt>3.2){D3.splice(i,1);continue}if(tt<0)continue;const ph=tt%1,jump=Math.floor(tt)<3;
+        const fx=P.x+Math.cos(P.h)*(d.f+ph*25)-Math.sin(P.h)*d.sd*d.o,fy=P.y+Math.sin(P.h)*(d.f+ph*25)+Math.cos(P.h)*d.sd*d.o,hh=jump?Math.sin(ph*Math.PI)*9-2:-6;
+        e.set(0,-P.h,Math.cos(ph*Math.PI)*.9,'YZX');q.setFromEuler(e);m.compose(v.set(fx,hh+waveH(fx,fy,CT,A)*.6,fy),q,s);dolIM.setMatrixAt(nd++,m);if(jump&&(ph<.06||Math.abs(ph-.94)<.06)&&Math.random()<.5)emit(fx,fy,(Math.random()-.5)*20,(Math.random()-.5)*20,.7,2.4,WHITE,5,1,12)}}
+    else D3.length=0;dolIM.count=nd;dolIM.instanceMatrix.needsUpdate=true}
+  /* Leute in den Städten: schlendern über Platz und Markt */
+  {let np=0;const m=new T.Matrix4(),q=new T.Quaternion(),s=new T.Vector3(1,1,1),v=new T.Vector3(),c=new T.Color();const CL=[0xe8e4d8,0xa8382e,0x3a5490,0x8a7050,0xd6c070,0x5a7a48];
+    if(Q>0&&!inBattle&&L>.12)for(const t of towns){const p=t.p,o=p.isl;if(Math.hypot(o.x-cx0,o.y-cz0)>650||!t.m.visible)continue;const z=ISLH.get(o).town.z,rs=mulberry(Math.round(o.x));
+      for(let k=0;k<(Q>1?16:8)&&np<90;k++){const r1=12+rs()*34,sp=(.04+rs()*.08)*(rs()<.5?1:-1),a=rs()*TAU+CT*sp,cxp=o.x+(rs()-.5)*30*z,cyp=o.y+(8+rs()*20)*z,x=cxp+Math.cos(a)*r1*z,y=cyp+Math.sin(a)*r1*.55*z;
+        q.setFromAxisAngle(v.set(0,1,0),-(a+Math.sign(sp)*Math.PI/2));const bob=Math.abs(Math.sin(CT*6+k))*.15;m.compose(v.set(x,gH(x,y)-.3+bob,y),q,s);pplIM.setMatrixAt(np,m);c.setHex(CL[(k+Math.floor(rs()*6))%6]);pplIM.setColorAt(np,c);np++}}
+    pplIM.count=np;pplIM.instanceMatrix.needsUpdate=true;if(pplIM.instanceColor)pplIM.instanceColor.needsUpdate=true}
+  kraken3b()}
+/* Kraken: Kopf mit Augen, acht Fangarme aus verjüngten Gliedern */
+function kraken3b(){let nt=0;const kr=(S&&P)?enemies.find(e=>e.kraken&&!e.dead&&!eHidden(e)):null;kBody.visible=kEyes.visible=!!kr;
+  if(kr){const sk=kr.sink>0,k=sk?clamp(kr.sink/2.6,0,1):0,y0=-k*45,m=new T.Matrix4(),q=new T.Quaternion(),s=new T.Vector3(),v=new T.Vector3(),c=new T.Color(),up=new T.Vector3(0,1,0),dir=new T.Vector3();
+    const fa=Math.atan2(P.y-kr.y,P.x-kr.x);kBody.position.set(kr.x,y0-4+Math.sin(CT*1.2)*2,kr.y);kBody.scale.set(30,34,30);kBody.rotation.set(0,0,0);kEyes.position.set(kr.x+Math.cos(fa)*22,y0+16+Math.sin(CT*1.2)*2,kr.y+Math.sin(fa)*22);kEyes.rotation.set(0,Math.PI/2-fa,0);
+    for(let i=0;i<8;i++){const a0=i/8*TAU+Math.sin(CT*.7+i)*.25,len=78+Math.sin(CT*2+i*1.7)*18;let prev=null;
+      for(let sg=0;sg<=10;sg++){const t=sg/10,d=24+len*t,sw=Math.sin(CT*1.6+i*1.3+t*3)*.45*t,rise=Math.sin(t*Math.PI*.9)*(26+Math.abs(Math.sin(CT*2.2+i))*18)-6+t*t*6*Math.sin(CT*3+i),pt=new T.Vector3(kr.x+Math.cos(a0+sw)*d,y0+rise,kr.y+Math.sin(a0+sw)*d);
+        if(prev&&nt<200){dir.subVectors(pt,prev);const l=dir.length();dir.normalize();q.setFromUnitVectors(up,dir);const r=7.2*(1-t*.82)+.6;m.compose(v.addVectors(prev,pt).multiplyScalar(.5),q,s.set(r,l*1.08,r));tentIM.setMatrixAt(nt,m);c.setRGB(lerp(.38,.78,t),lerp(.14,.42,t),lerp(.3,.55,t));tentIM.setColorAt(nt,c);nt++}prev=pt}}}
+  tentIM.count=nt;tentIM.instanceMatrix.needsUpdate=true;if(tentIM.instanceColor)tentIM.instanceColor.needsUpdate=true}
+/* ---- Leistung: Qualitätsstufen für 3D und Rückfall auf 2D ---- */
+function PRQ(){return[1.1,1.5,2.2][Q]}
+let lastQ3=-1,slowAcc=0,slowN=0,lastPN=0,since3=0;
+function qualityCheck(){if(lastQ3===Q)return;const first=lastQ3<0;lastQ3=Q;
+  const seg=[96,130,170][Q];water.geometry.dispose();const g=new T.PlaneGeometry(3800,3800,seg,seg);g.rotateX(-Math.PI/2);water.geometry=g;
+  if(!first&&built)buildVeg();lastDPR=-1}
+function slowGuard(){const now=performance.now(),raw=now-lastPN;lastPN=now;if(document.hidden||!(mode==='play'||mode==='battle')||raw<=0||raw>400){return}since3+=raw;if(since3<6000)return;
+  slowAcc+=raw;slowN++;if(slowN<150)return;const av=slowAcc/slowN;slowAcc=0;slowN=0;
+  if(av>58&&Q===0&&RS<=.56){toast('Die 3D-Ansicht läuft auf diesem Gerät zu langsam. Das Spiel wechselt zurück auf 2D. Du kannst sie unter „Ansicht“ wieder einschalten.');setTimeout(()=>setViewMode('2'),0)}}
 /* ---- Hauptbild ---- */
 let lastLR=false,lastW=0,lastH=0,lastDPR=0;
 function frame(dt){frameNo++;
-  if(lastW!==CW||lastH!==CH||lastDPR!==DPR){lastW=CW;lastH=CH;lastDPR=DPR;ren.setPixelRatio(DPR);ren.setSize(CW,CH,false);cam.aspect=CW/CH;cam.fov=CW<CH?62:50;cam.updateProjectionMatrix()}
-  if(!built)buildStatic();
+  if(lastW!==CW||lastH!==CH||lastDPR!==DPR){lastW=CW;lastH=CH;lastDPR=DPR;ren.setPixelRatio(Math.min(DPR,PRQ()));ren.setSize(CW,CH,false);cam.aspect=CW/CH;cam.fov=CW<CH?62:50;cam.updateProjectionMatrix()}
+  if(!built)buildStatic();qualityCheck();slowGuard();
   if(landReady&&!lastLR){landTex.needsUpdate=true}lastLR=landReady;
-  camera(dt);upVP();const E=env();updFx();updBalls();world(dt,E.na);updParts3(dt);updRain(dt);
+  camera(dt);upVP();const E=env();updFx();updBalls();world(dt,E.na);life(dt,E);updParts3(dt);updRain(dt);
   ren.render(scene,cam);lastFrameOk=CT;overlay()}
 /* ---- Laden und Umschalten ---- */
 function load(cb){if(st===2){cb(true);return}waiters.push(cb);if(st===1)return;st=1;
@@ -5482,7 +5613,7 @@ function load(cb){if(st===2){cb(true);return}waiters.push(cb);if(st===1)return;s
   if(window.THREE){go();return}
   const tryU=L=>{if(!L.length){st=-1;done(false);return}const s=document.createElement('script');s.src=L[0];s.async=true;s.onload=()=>{if(window.THREE)go();else tryU(L.slice(1))};s.onerror=()=>{s.remove();tryU(L.slice(1))};document.head.appendChild(s)};
   tryU(['three.min.js'])}
-function on(cb){if(st===-1){cb&&cb(false);return}if(st!==2)toast('3D-Ansicht wird geladen …');load(ok2=>{if(!ok2){cb&&cb(false);return}V3D=true;cv.style.display='block';cvs0.style.background='transparent';camOk=false;camH3=P?P.h:-Math.PI/2;cb&&cb(true)})}
+function on(cb){if(st===-1){cb&&cb(false);return}if(st!==2)toast('3D-Ansicht wird geladen …');load(ok2=>{if(!ok2){cb&&cb(false);return}V3D=true;since3=0;slowN=0;slowAcc=0;cv.style.display='block';cvs0.style.background='transparent';camOk=false;camH3=P?P.h:-Math.PI/2;cb&&cb(true)})}
 function off(){V3D=false;if(cv)cv.style.display='none';cvs0.style.background='';try{const g=cx;g.setTransform(1,0,0,1,0,0)}catch(e){}}
 function fail(e){logErr(e);off();st=st===2?2:-1;try{setViewMode('2')}catch(_){}toast('Die 3D-Ansicht hatte einen Fehler und wurde ausgeschaltet. Es geht in 2D weiter.')}
 return{ready:()=>st===2,on,off,frame,fail,proj:(x,y,h)=>st===2?proj(x,y,h||0):null,pick:(a,b)=>st===2?pick(a,b):null,get st(){return st},hAt:x=>hAt(x[0],x[1]),get _o(){return{scene,water,sky,waterU,skyU,cam,TA3}},dbgE:()=>enemies.map(e=>({h:eHidden(e),has:SH.has(e),seen:e.seen,d:Math.hypot(e.x-P.x,e.y-P.y)|0,q:SH.has(e)?proj(e.x,e.y,SH.get(e).t.mastTop+8):null})),dbg:()=>{const tc=g=>g?(g.index?g.index.count:g.attributes.position.count)/3:0;let land=landMesh?tc(landMesh.geometry):0,veg=0,vi=0,tw=0;for(const c of vegChunks){veg+=tc(c.m.geometry)*c.m.count;vi+=c.m.count}for(const t of towns)tw+=tc(t.m.geometry);return{land,veg,vi,tw,water:tc(water.geometry),ship:[...SH.values()].map(i=>tc(i.t.hullGeo)+i.t.rigs.reduce((a,r)=>a+tc(r.g),0))}},info:()=>({ships:SH.size,tm:TM.size,calls:ren?ren.info.render.calls:0,tris:ren?ren.info.render.triangles:0})}
@@ -6105,7 +6236,7 @@ const EN0={
 "Gerade lohnt sich keine Route":"No route is profitable right now",
 "Gewinn je Fahrt (jetzt":"Profit per trip (now",
 "Gobernador":"Gobernador",
-"Goldflotte":"Gold fleet",
+"Jedes Schatzschiff bringt über 10.000 Gold, doch ein Kriegsschiff begleitet sie. Auf der Karte markiert.":"Each treasure ship is worth over 10,000 gold, but a warship escorts them. Marked on the map.","Goldflotte":"Gold fleet",
 "Goldschiff":"Gold ship",
 "Silberflotte":"Silver fleet",
 "Silberschiff":"Silver ship",
@@ -6252,7 +6383,7 @@ const EN0={
 "Kommodore":"Commodore",
 "Piratenkönig":"Pirate King",
 "Notreparatur":"Emergency repair",
-"Ansicht: 2.5D":"View: 2.5D","Ansicht: 3D":"View: 3D","Die 3D-Ansicht nutzt die Bibliothek three.js (Copyright 2010–2023 three.js authors, MIT-Lizenz). Sie wird nur geladen, wenn du die 3D-Ansicht einschaltest. Der Lizenztext liegt der App als LIZENZ-THREEJS.txt bei.":"The 3D view uses the three.js library (Copyright 2010–2023 three.js authors, MIT licence). It is only loaded when you switch on the 3D view. The licence text comes with the app as LIZENZ-THREEJS.txt.","Neue 3D-Ansicht (Knopf „Ansicht“: 2.5D → 3D → 2D): Kamera hinter dem Schiff, im Gefecht Blick über die Schulter zum Gegner; Schiffe als echte Modelle mit Rumpf, Stückpforten, Kanonen, Masten, Rahen, Segeln im Wind, Wanten, Flaggen und Matrosen; Inseln mit Hügeln, Bergen, Palmen und Wäldern; Städte mit Häusern, Kirche, Rathaus, Markt, Werft, Sternfestung und Steg; Wellen, Kielwasser, Tageszeiten mit Sternenhimmel, Regen und Sturm. Außerdem: Schriften fest eingebaut, neuer Klang mit Hall und Instrumenten, Preise für Hafenausbau und Gebäude neu abgestimmt":"New 3D view (“View” button: 2.5D → 3D → 2D): camera behind your ship, in battle an over-the-shoulder view towards the enemy; ships as real models with hull, gun ports, cannons, masts, yards, sails in the wind, shrouds, flags and sailors; islands with hills, mountains, palms and forests; towns with houses, church, town hall, market, shipyard, star fort and pier; waves, wakes, times of day with a starry sky, rain and storms. Also: fonts built in, new sound with reverb and instruments, prices for port upgrades and buildings rebalanced","Ansicht: 2D":"View: 2D","3D-Ansicht wird geladen …":"Loading 3D view …","Die 3D-Ansicht ließ sich auf diesem Gerät nicht starten (WebGL fehlt?). Es bleibt bei 2D.":"The 3D view could not start on this device (no WebGL?). Staying in 2D.","Die 3D-Ansicht hatte einen Fehler und wurde ausgeschaltet. Es geht in 2D weiter.":"The 3D view hit an error and was turned off. Continuing in 2D.",
+"Ansicht: 2.5D":"View: 2.5D","Ansicht: 3D":"View: 3D"," Gold. Auf der Minikarte rot markiert.":" gold. Marked red on the minimap.","Kapern: Nach einem gewonnenen Enterkampf kannst du das Schiff mit einer Prisenmannschaft in deine Flotte aufnehmen (bis zu 3 Schiffe). Neu sind acht berühmte Piraten der Zeit: Blackbeard, Black Bart, Henry Morgan, Calico Jack mit Anne Bonny und Mary Read, Charles Vane, Black Sam Bellamy, Henry Every und Edward Low. Sie segeln mit Begleitschiffen, halten viel mehr aus, schießen härter und schneller, fliehen nie und bringen hohe Kopfgelder":"Capturing: after winning a boarding fight you can add the ship to your fleet with a prize crew (up to 3 ships). New are eight famous pirates of the age: Blackbeard, Black Bart, Henry Morgan, Calico Jack with Anne Bonny and Mary Read, Charles Vane, Black Sam Bellamy, Henry Every and Edward Low. They sail with escorts, take far more punishment, fire harder and faster, never flee and carry high bounties","Er flicht brennende Lunten in seinen Bart. Seine Breitseiten setzen Schiffe in Brand.":"He braids burning fuses into his beard. His broadsides set ships ablaze.","Der erfolgreichste Pirat seiner Zeit. Er lädt schneller nach als jeder andere.":"The most successful pirate of his age. He reloads faster than anyone.","Der Freibeuter von Port Royal segelt nie allein.":"The privateer of Port Royal never sails alone.","Anne Bonny und Mary Read führen die Enterer an. Wer sie entern will, braucht viele Männer.":"Anne Bonny and Mary Read lead the boarders. Anyone who wants to board them needs many men.","Schnell und gnadenlos. Er schlägt zu und ist weg, bevor du nachgeladen hast.":"Fast and merciless. He strikes and is gone before you have reloaded.","Der „Robin Hood der Meere“ mit seiner schwer bewaffneten Galeere.":"The “Robin Hood of the seas” with his heavily armed galley.","Der König der Piraten. Auf seinen Kopf ist das höchste Kopfgeld ausgesetzt.":"The king of pirates. The highest bounty of all is on his head.","Berüchtigt für seine Grausamkeit. Er kämpft bis zum letzten Mann.":"Notorious for his cruelty. He fights to the last man.","Jack Rackham mit Anne Bonny und Mary Read":"Jack Rackham with Anne Bonny and Mary Read",") kreuzt mit der ":") is cruising with the ",". Kopfgeld: ":". Bounty: ",". Auf der Minikarte rot markiert.":". Marked red on the minimap."," ist besiegt! Kopfgeld: ":" is defeated! Bounty: "," Gold. Die ganze Karibik spricht von dir.":" gold. The whole Caribbean is talking about you.","Den legendären Piraten ":"Defeated the legendary pirate "," greift an! ":" attacks! ","Legendäre Piraten besiegt":"Legendary pirates defeated","Deine Flotte ist voll (höchstens 3 Schiffe).":"Your fleet is full (3 ships at most).","Zu wenig Männer für eine Prisenmannschaft.":"Too few men for a prize crew.","Gekapert! Die ":"Captured! The "," segelt jetzt mit ":" now sails with "," Mann Prisenmannschaft in deiner Flotte. Dazu ":" men of prize crew in your fleet. Plus ","Kapern: in die Flotte aufnehmen":"Capture: add to your fleet"," segelt mit dir, mit eigenem Kapitän. Braucht ":" sails with you, with its own captain. Needs "," Mann Prisenmannschaft. Dazu ":" men of prize crew. Plus "," Gold und die Ladung. Flotte: ":" gold and the cargo. Fleet: "," Die Flotte ist voll.":" The fleet is full."," Zu wenig Männer an Bord.":" Too few men on board.","Kapern":"Capture","Schatzflotten werden angekündigt: In den Tavernen spricht man vorher davon, der Wirt verrät für 40 Gold Route und Abfahrtstag, die Route erscheint gestrichelt auf See- und Minikarte. Stürme kündigen sich an: erst eine dunkle Wolkenwand am Horizont mit Himmelsrichtung, auffrischender Wind und höhere Wellen, dann erst der Sturm. Das Gerücht über Wracks und Höhlen in der Taverne funktioniert wieder. Mitwirkende: Smartzone":"Treasure fleets are announced: the taverns talk about them in advance, the innkeeper reveals route and departure day for 40 gold, and the route appears as a dashed line on the sea chart and minimap. Storms announce themselves: first a dark cloud wall on the horizon with its compass direction, a freshening wind and higher waves, then the storm itself. The tavern rumour about wrecks and caves works again. Credits: Smartzone","Am Horizont im ":"On the horizon to the "," zieht ein Sturm auf. Der Wind frischt auf. Noch kannst du einen Hafen anlaufen.":", a storm is brewing. The wind is picking up. You can still make for a port.","Der Sturm ist da! Starker Wind, unsicheres Zielen.":"The storm has arrived! Strong wind, unsteady aim.","Osten":"east","Südosten":"south-east","Süden":"south","Südwesten":"south-west","Westen":"west","Nordwesten":"north-west","Norden":"north","Nordosten":"north-east","In den Tavernen erzählt man sich von einer ":"In the taverns they talk of a ",", die bald ausläuft. Frag den Wirt nach Route und Abfahrtstag.":" that will set sail soon. Ask the innkeeper about its route and departure day.",", Abfahrt am Tag ":", departing on day ","Gerücht: Schatzflotte":"Rumour: treasure fleet","Der Wirt weiß, wann und wohin die nächste Gold- oder Silberflotte segelt.":"The innkeeper knows when and where the next gold or silver fleet sails.","Schatzflotte":"Treasure fleet",". Die Route ist auf der Karte gestrichelt eingezeichnet. Jedes Schatzschiff bringt über 10.000 Gold.":". The route is marked on the map with a dashed line. Every treasure ship is worth over 10,000 gold.",". Route auf der Karte eingezeichnet.":". Route marked on the map.","Schatzflotte · Tag ":"Treasure fleet · day ","Schatzflotte unterwegs":"Treasure fleet under way","3D-Ansicht: Wolken mit Schatten auf Meer und Inseln, Hurrikan als drehende Wolkenwand, Möwen, springende Delfine, Leute in den Städten und ein Kraken mit acht Fangarmen. Die Grafikstufe gilt jetzt auch für 3D, unter Optionen > Grafik lässt sich die Bildrate anzeigen, und läuft 3D auf einem Gerät viel zu langsam, wechselt das Spiel von selbst auf 2D":"3D view: clouds casting shadows on sea and islands, hurricanes as a rotating cloud wall, gulls, leaping dolphins, people in the towns and a kraken with eight tentacles. The quality setting now also applies to 3D, Options > Graphics can show the frame rate, and if 3D runs far too slowly on a device the game switches to 2D by itself","Bildrate anzeigen":"Show frame rate","Bilder/s":"fps","Die 3D-Ansicht läuft auf diesem Gerät zu langsam. Das Spiel wechselt zurück auf 2D. Du kannst sie unter „Ansicht“ wieder einschalten.":"The 3D view runs too slowly on this device. The game switches back to 2D. You can turn it on again under “View”.","Gold- und Silberflotte kommen seltener (etwa alle 17 bis 27 Tage) und werden von einem Kriegsschiff begleitet. Dafür bringt jedes Schatzschiff über 10.000 Gold, beim Entern wie beim Versenken":"Gold and silver fleets appear less often (about every 17 to 27 days) and are escorted by a warship. In return every treasure ship is worth over 10,000 gold, whether boarded or sunk","Die 3D-Ansicht nutzt die Bibliothek three.js (Copyright 2010–2023 three.js authors, MIT-Lizenz). Sie wird nur geladen, wenn du die 3D-Ansicht einschaltest. Der Lizenztext liegt der App als LIZENZ-THREEJS.txt bei.":"The 3D view uses the three.js library (Copyright 2010–2023 three.js authors, MIT licence). It is only loaded when you switch on the 3D view. The licence text comes with the app as LIZENZ-THREEJS.txt.","Neue 3D-Ansicht (Knopf „Ansicht“: 2.5D → 3D → 2D): Kamera hinter dem Schiff, im Gefecht Blick über die Schulter zum Gegner; Schiffe als echte Modelle mit Rumpf, Stückpforten, Kanonen, Masten, Rahen, Segeln im Wind, Wanten, Flaggen und Matrosen; Inseln mit Hügeln, Bergen, Palmen und Wäldern; Städte mit Häusern, Kirche, Rathaus, Markt, Werft, Sternfestung und Steg; Wellen, Kielwasser, Tageszeiten mit Sternenhimmel, Regen und Sturm. Außerdem: Schriften fest eingebaut, neuer Klang mit Hall und Instrumenten, Preise für Hafenausbau und Gebäude neu abgestimmt":"New 3D view (“View” button: 2.5D → 3D → 2D): camera behind your ship, in battle an over-the-shoulder view towards the enemy; ships as real models with hull, gun ports, cannons, masts, yards, sails in the wind, shrouds, flags and sailors; islands with hills, mountains, palms and forests; towns with houses, church, town hall, market, shipyard, star fort and pier; waves, wakes, times of day with a starry sky, rain and storms. Also: fonts built in, new sound with reverb and instruments, prices for port upgrades and buildings rebalanced","Ansicht: 2D":"View: 2D","3D-Ansicht wird geladen …":"Loading 3D view …","Die 3D-Ansicht ließ sich auf diesem Gerät nicht starten (WebGL fehlt?). Es bleibt bei 2D.":"The 3D view could not start on this device (no WebGL?). Staying in 2D.","Die 3D-Ansicht hatte einen Fehler und wurde ausgeschaltet. Es geht in 2D weiter.":"The 3D view hit an error and was turned off. Continuing in 2D.",
 "Ansicht: Flach":"View: Flat",
 "Munition: Kugel":"Ammo: Ball",
 "Munition: Kette":"Ammo: Chain",
@@ -7464,6 +7595,7 @@ function capT(){return CLS[S.cls].cap+fleetCap()}
 const ALL=[],STN=['Ausgewogen','Geschütze','Segel','Reparatur'];
 let ramCd=0;
 function fleetOf(){S.fleet=S.fleet||[];return S.fleet}
+function prizeCrew(ci){return Math.max(6,Math.round(CLS[ci].maxCrew*.12))}
 function allyPos(i){const f=(S&&S.form)||0,FL=(S&&S.fleet)||[];let o;
   if(f===1)o=[-85*(i+1),0];
   else if(f===2){const cg=FL.map(r=>{const d=fdef(r);return d.cap>=100&&d.cannons<=3});let ci=0,ei=0;for(let j=0;j<i;j++)cg[j]?ci++:ei++;o=cg[i]?[[-100,0],[-175,0],[-250,0]][ci]:[[-30,-80],[-30,80],[-150,-95]][ei]}
@@ -7744,6 +7876,10 @@ let last=performance.now(),hudT=0;
 /* Adaptive Auflösung: hält die Bildrate des Displays (60/90/120 Hz), indem bei Last die Render-Auflösung sinkt */
 let pfN=0,pfSum=0,pfBest=1e9,pfGood=0,pfCool=0;
 let aqS=0,aqN=0,aqBad=0,camPunch=0,slowT=0;
+/* Bildrate-Anzeige (Optionen > Grafik) */
+let fpsEl=null,fpsN=0,fpsT=0,fpsLast=0;
+function fpsShow(){if(UI.fps&&!fpsEl){fpsEl=document.createElement('div');fpsEl.id='fpsd';fpsEl.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(6px + env(safe-area-inset-bottom,0px));z-index:8;background:rgba(10,16,22,.72);color:#e8f4d0;font:600 11px/1.2 system-ui,sans-serif;padding:3px 9px;border-radius:10px;pointer-events:none';document.body.appendChild(fpsEl)}if(fpsEl)fpsEl.hidden=!UI.fps}
+function fpsTick(now){if(!UI.fps)return;if(!fpsEl)fpsShow();fpsN++;if(!fpsT)fpsT=now;if(now-fpsT>=600){const f=Math.round(fpsN*1000/(now-fpsT));fpsEl.textContent=f+' Bilder/s · '+(V3D?'3D':TK===1?'2D':'2.5D');fpsEl.style.color=f>=40?'#bff0a0':f>=25?'#ffe08a':'#ff9a8a';fpsN=0;fpsT=now}}
 function frame(now){
   requestAnimationFrame(frame);
   if(UI.eco&&now-last<29&&now>=last)return;
@@ -7756,6 +7892,7 @@ function frame(now){
         else if(av<pfBest*1.1&&RS<RSMAX){if(++pfGood>=4){RS=Math.min(RSMAX,RS+0.15);pfGood=0;pfCool=3;resize()}}else pfGood=0}}}
   if(live&&raw>0&&raw<200&&!document.hidden&&!UI.eco){aqS+=raw;aqN++;if(aqN>=120){const av=aqS/aqN;aqS=0;aqN=0;if(av>27&&RS<=0.56&&Q>0){if(++aqBad>=3){aqBad=0;Q--;try{localStorage.setItem('kk-q',Q)}catch(e){}RSMAX=[.62,.8,1][Q];RS=Math.min(RS,RSMAX);resize();$('btnQ').textContent='Qualität: '+QN[Q];toast('Das Spiel lief langsam. Qualität automatisch auf „'+QN[Q]+'“ gesenkt. Im Logbuch kannst du das ändern.')}}else if(av>30&&RS<=0.56&&Q===0&&glOn()){if(++aqBad>=3){aqBad=0;UI.glw=0;try{localStorage.setItem('kk-ui',JSON.stringify(UI))}catch(e){}toast('Das Spiel lief langsam. Die Wassergrafik wurde auf „Klassisch“ umgestellt.')}}else aqBad=0}}
   let dt=Math.min(0.05,raw/1000);last=now;camPunch*=Math.pow(.02,dt);if(slowT>0){slowT-=dt;dt*=.35}
+  fpsTick(now);
   try{
   if(fateOpen||wmOpen||CUT||PHOTO){}else if(mode==='play')update(dt);else if(mode==='battle')updateBattle(dt);
   updParts(dt);
