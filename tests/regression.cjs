@@ -139,6 +139,20 @@ await check('Fehlerprotokoll des Spiels ist leer', async () => {
   expect(log.length === 0, log.slice(0, 3).join(' | '));
 });
 
+await check('Karte: beim Wechsel der Ansicht wird keine halb gezeichnete Karte gespeichert', async () => {
+  // Frisches Profil: Karte (2.5D) wird neu gezeichnet, direkt danach auf 3D umschalten.
+  const ctx = await browser.newContext({ viewport: { width: 412, height: 860 } });
+  const p2 = await ctx.newPage();
+  p2.on('pageerror', e => jsErrors.push('Seitenfehler: ' + (e.stack || e.message)));
+  await p2.goto(URL_, { waitUntil: 'load' });
+  await p2.waitForFunction('window.__ev && __ev("landReady")', null, { timeout: 60000, polling: 50 });
+  await p2.evaluate(() => window.__ev(`setViewMode('3')`));
+  await p2.waitForTimeout(8000);
+  const r = await p2.evaluate(() => window.__ev(`landReady?'fertig':kkGet(landKey()).then(v=>v?'halbe Karte gespeichert':'ok')`));
+  await ctx.close();
+  expect(r !== 'halbe Karte gespeichert', 'Unfertige Karte landete im Speicher');
+});
+
 await browser.close();
 server.close();
 
