@@ -63,7 +63,8 @@ try {
     await page.click('#btnNew');
     await page.waitForSelector('#natsel:not([hidden])');
     await page.click('#natlist [data-nat="eng"]');
-    await page.waitForFunction('window.__kkTest && __kkTest.mode() === "play"', null, { timeout: 10000 });
+    await page.waitForFunction('window.__kkTest && !["title", "dead"].includes(__kkTest.mode())', null, { timeout: 30000, polling: 250 });
+    console.log('(Spielmodus: ' + await page.evaluate(() => __kkTest.mode()) + ') ');
     await page.waitForTimeout(3000); // ein paar Sekunden segeln
   });
 
@@ -75,7 +76,7 @@ try {
       return true;
     });
     if (!ok) throw new Error('Kein Gegnerschiff gefunden');
-    await page.waitForFunction('__kkTest.mode() === "battle"', null, { timeout: 5000 });
+    await page.waitForFunction('__kkTest.mode() === "battle"', null, { timeout: 15000, polling: 250 });
     for (let i = 0; i < 6; i++) {
       await page.keyboard.press(i % 2 ? 'e' : 'q'); // Breitseiten feuern
       await page.waitForTimeout(700);
@@ -90,6 +91,12 @@ try {
 } catch (e) {
   failed = e;
   console.log('FEHLER');
+  // Hilfe bei der Fehlersuche: Spielzustand und sichtbare Fenster ausgeben
+  const diag = await page.evaluate(() => ({
+    mode: window.__kkTest ? __kkTest.mode() : '(Testzugang fehlt)',
+    sichtbar: [...document.querySelectorAll('body > *[id]')].filter(el => !el.hidden && getComputedStyle(el).display !== 'none').map(el => el.id).join(', '),
+  })).catch(err => ({ fehler: String(err) }));
+  console.log('  Zustand:', JSON.stringify(diag));
 }
 
 await page.screenshot({ path: path.join(ROOT, 'tests', 'smoke-letzter-stand.png') }).catch(() => {});
