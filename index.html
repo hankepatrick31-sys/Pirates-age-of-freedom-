@@ -1618,7 +1618,7 @@ function migrate(S0){const v=S0.sv||0;
 function slotInfo(i){const d=slotData(i);if(!d)return null;const c=CLS[d.S.cls||0];return NAT[d.S.nat||'eng'].n+' · Tag '+d.S.day+' · '+Math.round(d.S.gold)+' Gold · '+c.n+' · Spielzeit '+ptTxt(d.S.pt)}
 function encCode(i){try{return btoa(unescape(encodeURIComponent('KK1:'+localStorage.getItem(KEYS[i]))))}catch(e){return ''}}
 function importCode(code){try{const t=decodeURIComponent(escape(atob(code.trim())));if(t.slice(0,4)!=='KK1:')return -1;const d=JSON.parse(t.slice(4));if(!d||!d.S||!d.p)return -1;let i=[0,1,2].find(k=>!slotData(k));if(i===undefined)i=2;localStorage.setItem(KEYS[i],t.slice(4));return i}catch(e){return -1}}
-const GAME_VER='1.87',SAVE_VER=66;
+const GAME_VER='1.88',SAVE_VER=66;
 function save(){try{saveFx()}catch(e){}S.pf=PORTS.map(p=>[p.n,p.f,p.hp]);S.sv=SAVE_VER;try{localStorage.setItem(KEYS[curSlot],JSON.stringify({S:S,p:(inBattle&&battle?{x:battle.world.px,y:battle.world.py,h:battle.world.ph}:{x:P.x,y:P.y,h:P.h})}))}catch(e){}}
 function hasSave(){return !!slotData(curSlot)}
 function load(){
@@ -2210,7 +2210,7 @@ async function buildLandNow(){
       g.strokeStyle='#b9a98a';g.lineWidth=1.6;g.beginPath();for(let k=0;k<=8;k++){const a=a0+k*0.075,r=rAt(o,a)*0.915;k?g.lineTo(o.x+Math.cos(a)*r-1,o.y+Math.sin(a)*r-1):g.moveTo(o.x+Math.cos(a)*r-1,o.y+Math.sin(a)*r-1)}g.stroke()}}}
   try{landRelief(g)}catch(e){logErr&&logErr(e)}await Y();
   for(const p of PORTS){if(++yc%4===0)await Y();drawTownOn(g,p,true)}
-  landReady=true;{const m=document.getElementById('mapload');m&&m.remove()}setTimeout(landSave,2500);
+  landReady=true;{const m=document.getElementById('mapload');m&&m.remove()}{const lk=landKey();setTimeout(()=>{if(landReady&&landKey()===lk)landSave()},2500)}/* nur speichern, wenn die Ansicht inzwischen nicht gewechselt wurde, sonst landet eine halb gezeichnete Karte im Cache */
 }
 setTimeout(()=>requestAnimationFrame(()=>setTimeout(buildLandNow,40)),0);
 
