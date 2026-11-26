@@ -730,13 +730,15 @@ function hostileNat(n){
 function portHostile(p){if(p.f===S.nat&&p.f0!==S.nat)return false;return p.f!=='pir'&&hostileNat(p.f)}
 function questTarget(n){return S.quests.some(q=>q.type==='marque'&&q.tn===n&&!q.done)}
 const SHIPNAT={eng:'England',esp:'Spanien',nl:'Niederlande',fr:'Frankreich',pir:'Piraten'};
-function atkLabel(ab,e){const n=e.nat,st=hostileNat(n)||(S.wars&&S.wars[n])?'f':legalTarget(n)?'l':'p',k=e.t+'|'+n+'|'+st+'|'+LANG;if(ab._k===k)return;ab._k=k;
+function atkLabel(ab,e){const n=e.nat,st=hostileNat(n)||(S.wars&&S.wars[n])||e.story?'f':legalTarget(n)?'l':'p',k=e.t+'|'+n+'|'+st+'|'+LANG;if(ab._k===k)return;ab._k=k;
   const col=n==='pir'?'#15151a':(FAC[n]?FAC[n].c:'#888'),info=st==='f'?T_('Feind'):st==='l'?T_('Angriff erlaubt'):T_('Frieden: Angriff bedeutet Krieg!');
   ab.innerHTML=escH(T_('Angreifen')+': '+T_(ET[e.t].n))+'<small class="atkn"><i style="background:'+col+'"></i>'+(st==='p'?'⚠ ':'')+escH(T_(SHIPNAT[n]||n))+' · '+escH(info)+'</small>';
   ab.classList.toggle('peace',st==='p')}
 function legalTarget(n){return hostileNat(n)||questTarget(n)||lmOK(n)}
+/* Gegner der Hauptgeschichte darf man immer angreifen, auch als Freibeuter (sonst Krieg mit den Piraten) */
+function legalShip(e){return !!(e&&e.story)||legalTarget(e.nat)}
 const SELLM_FREE=()=>(typeof curPort!=='undefined'&&curPort&&curPort.n==='Port Liberté'?1.06:1);
-const BUYM=()=>(typeof curPort!=='undefined'&&curPort&&curPort.n==='Port Liberté'?.92:1)*(typeof S!=='undefined'&&S&&S.ttl>=4?.95:1)*(S.nat==='nl'?1:1.06)*(curPort?repBuy(curPort.f):1)*(bioIs(0)?.97:1),SELLM=()=>SELLM_FREE()*(S.nat==='nl'?1:0.94)*(bioIs(0)?1.03:1);
+const BUYM=()=>Math.max(SELLM()*1.04,BUYM_RAW()),BUYM_RAW=()=>(typeof curPort!=='undefined'&&curPort&&curPort.n==='Port Liberté'?.92:1)*(typeof S!=='undefined'&&S&&S.ttl>=4?.95:1)*(S.nat==='nl'?1:1.06)*(curPort?repBuy(curPort.f):1)*(bioIs(0)?.97:1),SELLM=()=>SELLM_FREE()*(S.nat==='nl'?1:0.94)*(bioIs(0)?1.03:1);
 const BASECAP=CLS.map(c=>c.cap),BASESPD=CLS.map(c=>c.spd);
 const BASEHULL=CLS.map(c=>c.hull),BASECAN=CLS.map(c=>c.cannons);
 const UPG={
@@ -1024,10 +1026,10 @@ function hofAdd(t){try{const R=retireCalc(),L=hofGet().filter(x=>x.id!==S.gid);i
 function hofHTML(){const L=hofGet();if(!L.length)return '<p class="hint">Noch keine Einträge. Geh in den Ruhestand, um hier zu erscheinen.</p>';
   return L.map((x,i)=>'<div class="kv"><span>'+(i+1)+'. '+x.t+' <small>('+(NAT[x.n]?NAT[x.n].n:x.n)+', '+x.a+' Jahre, Tag '+x.d+')</small></span><b>'+x.sc+'</b></div>').join('')}
 /* ---------- Handelshilfe ---------- */
-function seenRec(p){if(!S||!p)return;S.seen=S.seen||{};const o={d:S.day,b:{},s:{}};for(const g of GOODS){const pr=price(p,g);o.b[g]=Math.round(pr*BUYM());o.s[g]=Math.round(pr*SELLM())}S.seen[p.n]=o}
+function seenRec(p){if(!S||!p)return;S.seen=S.seen||{};const o={d:S.day,b:{},s:{}};for(const g of GOODS){o.b[g]=Math.round(price(p,g,1)*BUYM());o.s[g]=Math.round(price(p,g,-1)*SELLM())}S.seen[p.n]=o}
 function tipHTML(p,g){if(!S.seen)return '';let bs=null,bb=null;
   for(const n in S.seen){if(n===p.n)continue;const o=S.seen[n];if(S.day-o.d>30)continue;if(!bs||o.s[g]>bs.v)bs={n:n,v:o.s[g],d:o.d};if(!bb||o.b[g]<bb.v)bb={n:n,v:o.b[g],d:o.d}}
-  if(!bs)return '';const here=Math.round(price(p,g)*BUYM()),gain=bs.v-here,ago=x=>S.day-x.d===0?'heute':'vor '+(S.day-x.d)+' T.';
+  if(!bs)return '';const here=Math.round(price(p,g,1)*BUYM()),gain=bs.v-here,ago=x=>S.day-x.d===0?'heute':'vor '+(S.day-x.d)+' T.';
   return '<small class="tip">Bester Verkauf: '+bs.n+' '+bs.v+' ('+ago(bs)+')'+(gain>0?' → <b style="color:#6fbf73">+'+gain+' je Fass</b>':'')+' · Günstigster Kauf: '+bb.n+' '+bb.v+'</small>'}
 /* ---------- Überfälle auf Handelsrouten ---------- */
 let raidSp=false;
@@ -1120,7 +1122,7 @@ function makeBoardLoot(e){
   return L;
 }
 function startBoard(e){
-  if(!legalTarget(e.nat)&&!S.wars[e.nat]){S.wars[e.nat]=true;toast('Verbrechen! '+NAT[e.nat].n+' erklärt dir den Krieg. Begnadigung gibt es im Rathaus.')}
+  if(!legalShip(e)&&!S.wars[e.nat]){S.wars[e.nat]=true;toast('Verbrechen! '+NAT[e.nat].n+' erklärt dir den Krieg. Begnadigung gibt es im Rathaus.')}
   const def=ET[e.t],ratio=clamp(e.hull/def.hull,0.2,1),ec=Math.max(3,Math.round(def.crew*(0.55+0.45*ratio)-(e.cl||0)));
   try{Snd.clash()}catch(_){}
   board={e:e,start:S.crew,ec:ec,ec0:ec,log:[],state:'fight',round:0,ratio:ratio,loot:null};
@@ -1255,7 +1257,7 @@ function gatherBattle(first){
 }
 function startBattle(list){
   if(inBattle||!list.length)return;
-  for(const e of list)if(!legalTarget(e.nat)&&!S.wars[e.nat]){S.wars[e.nat]=true;toast('Verbrechen! '+NAT[e.nat].n+' erklärt dir den Krieg. Begnadigung gibt es im Rathaus.')}
+  for(const e of list)if(!legalShip(e)&&!S.wars[e.nat]){S.wars[e.nat]=true;toast('Verbrechen! '+NAT[e.nat].n+' erklärt dir den Krieg. Begnadigung gibt es im Rathaus.')}
   battle={vert:CH>CW*1.15,tw:siegeTowers(list),twT:2,world:{px:P.x,py:P.y,ph:P.h},saved:list.map(e=>({e:e,x:e.x,y:e.y,h:e.h,v:e.v,lead:e.lead,dest:e.dest})),list:list,t:0,edge:0,endT:0};
   setBounds(true);
   if(battle.vert){P.x=ARX;P.y=ARY+250;P.h=-Math.PI/2}else{P.x=ARX-230;P.y=ARY;P.h=0}P.v=Math.min(P.v,30);P.rl=[0.5,0.5];P.turnS=0;
@@ -1528,7 +1530,7 @@ function migrate(S0){const v=S0.sv||0;
 function slotInfo(i){const d=slotData(i);if(!d)return null;const c=CLS[d.S.cls||0];return NAT[d.S.nat||'eng'].n+' · Tag '+d.S.day+' · '+Math.round(d.S.gold)+' Gold · '+c.n+' · Spielzeit '+ptTxt(d.S.pt)}
 function encCode(i){try{return btoa(unescape(encodeURIComponent('KK1:'+localStorage.getItem(KEYS[i]))))}catch(e){return ''}}
 function importCode(code){try{const t=decodeURIComponent(escape(atob(code.trim())));if(t.slice(0,4)!=='KK1:')return -1;const d=JSON.parse(t.slice(4));if(!d||!d.S||!d.p)return -1;let i=[0,1,2].find(k=>!slotData(k));if(i===undefined)i=2;localStorage.setItem(KEYS[i],t.slice(4));return i}catch(e){return -1}}
-const GAME_VER='1.78',SAVE_VER=66;
+const GAME_VER='1.79',SAVE_VER=66;
 function save(){try{saveFx()}catch(e){}S.pf=PORTS.map(p=>[p.n,p.f,p.hp]);S.sv=SAVE_VER;try{localStorage.setItem(KEYS[curSlot],JSON.stringify({S:S,p:(inBattle&&battle?{x:battle.world.px,y:battle.world.py,h:battle.world.ph}:{x:P.x,y:P.y,h:P.h})}))}catch(e){}}
 function hasSave(){return !!slotData(curSlot)}
 function load(){
@@ -1550,13 +1552,14 @@ function toast(msg){try{toastTop()}catch(e){}
 }
 function dmOf(p,g){return(S.dm&&S.dm[p.n]&&S.dm[p.n][g])||1}
 function dmAdd(p,g,n,up){S.dm=S.dm||{};const d=S.dm[p.n]=S.dm[p.n]||{};d[g]=clamp((d[g]||1)*Math.pow(up?1.022:.978,n),.5,1.7)}
-function price(p,g){return Math.max(8,Math.round(BASE[g]*(p.mod[g]||1)*mkOf(p,g)*dmOf(p,g)*evM(p,g)*seasM(g)*(1+.1*WX.storm)*(1+0.18*Math.sin(S.day*0.6+p.seed+GOODS.indexOf(g)*2))))}
+/* sd>0: Kaufpreis, sd<0: Verkaufspreis. Eigene Käufe heben nur den Kaufpreis, eigene Verkäufe senken nur den Verkaufspreis (sonst Gewinn durch Kaufen und sofort Zurückverkaufen) */
+function price(p,g,sd){const dm=dmOf(p,g);return Math.max(8,Math.round(BASE[g]*(p.mod[g]||1)*mkOf(p,g)*(sd>0?Math.max(1,dm):sd<0?Math.min(1,dm):dm)*evM(p,g)*seasM(g)*(1+.1*WX.storm)*(1+0.18*Math.sin(S.day*0.6+p.seed+GOODS.indexOf(g)*2))))}
 function bookHTML(here){
   let h=evListHTML()+'<p class="hint">Preise heute in allen Häfen. <span style="color:#7fd48a">Grün</span> = günstig zum Einkaufen, <span style="color:#f08a6a">rot</span> = gefragt, gut zum Verkaufen.</p><div class="tbl"><table><tr><th>Hafen</th>'+GOODS.map(g=>'<th title="'+g+'">'+T_(g).slice(0,4)+'</th>').join('')+'</tr>';
   PORTS.forEach(p=>{h+='<tr'+(p===here?' class="me"':'')+'><td>'+p.n+(portHostile(p)?' ⚔':'')+'</td>'+GOODS.map(g=>{const v=price(p,g),c=v<BASE[g]*0.85?'lo':v>BASE[g]*1.15?'hi':'';return '<td class="'+c+'">'+v+'</td>'}).join('')+'</tr>'});
   h+='</table></div><p class="hint" style="margin-top:10px"><b>Beste Handelsrouten</b> (feindliche Häfen ausgenommen)</p>';
   const R=[];
-  GOODS.forEach(g=>PORTS.forEach(a=>PORTS.forEach(b=>{if(a===b||portHostile(a)||portHostile(b))return;const pf=Math.round(price(b,g)*SELLM())-Math.round(price(a,g)*BUYM());if(pf>0)R.push({g:g,a:a,b:b,pf:pf,d:Math.round(Math.hypot(a.x-b.x,a.y-b.y)/10)})})));
+  GOODS.forEach(g=>PORTS.forEach(a=>PORTS.forEach(b=>{if(a===b||portHostile(a)||portHostile(b))return;const pf=Math.round(price(b,g,-1)*SELLM())-Math.round(price(a,g,1)*BUYM());if(pf>0)R.push({g:g,a:a,b:b,pf:pf,d:Math.round(Math.hypot(a.x-b.x,a.y-b.y)/10)})})));
   R.sort((x,y)=>y.pf-x.pf);
   if(!R.length)h+='<p class="hint">Gerade lohnt sich keine Route.</p>';
   R.slice(0,6).forEach(r=>{h+='<div class="kv"><span>'+r.g+': '+r.a.n+' → '+r.b.n+'</span><b>+'+r.pf+' je Stück</b></div>'});
@@ -1624,7 +1627,7 @@ function hitEnemy(e,b){
   Snd.hit(b.x,b.y);
   fxBoom(b.x,b.y);for(let k=0;k<6;k++)emit(b.x,b.y,(rnd()-.5)*70,(rnd()-.5)*70,.7,3,FIRE,3,7,8+rnd()*10);
   emit(b.x,b.y,0,0,1.2,4,SMOKE,8,7,6);
-  if(!legalTarget(e.nat)&&!S.wars[e.nat]){S.wars[e.nat]=true;toast('Verbrechen! '+NAT[e.nat].n+' erklärt dir den Krieg. Begnadigung gibt es im Rathaus.')}
+  if(!legalShip(e)&&!S.wars[e.nat]){S.wars[e.nat]=true;toast('Verbrechen! '+NAT[e.nat].n+' erklärt dir den Krieg. Begnadigung gibt es im Rathaus.')}
   const kd=b.k||'ball';
   e.hull-=b.d*(kd==='chain'?0.35:kd==='grape'?0.25:kd==='fire'?0.8:1);e.alert=10;if(kd==='fire'&&!(e.burn>0)&&rnd()<.6)e.burn=8;
   if(kd==='chain'){e.slow=6;e.tear=Math.min(1,(e.tear||0)+.34);for(let k=0;k<5;k++)emit(b.x,b.y,(rnd()-.5)*50,(rnd()-.5)*50,1,2,GREY,2,3,6)}
@@ -1674,7 +1677,7 @@ function updEnemy(e,dt){
   const dx=P.x-e.x,dy=P.y-e.y,dp=Math.hypot(dx,dy),b=Math.atan2(dy,dx);
   if(e.convE&&e.fleet&&(!e.lead||e.lead.dead||e.lead.sink>0))e.fleet=0;
   if(dp>1600&&!e.fleet){e.dead=true;return}
-  const hn=(hostileNat(e.nat)||e.rival||e.siege||e.hunt)&&(mode==='play'||mode==='battle'),hostile=inBattle?(e.t!=='m'&&(e.alert>0||hn)):(hn&&e.t!=='m'&&e.t!=='f'&&dp<((e.inf!==undefined||e.rival||e.hunt)?760:480)*(todLight()<.3?.7:1));
+  const hn=(hostileNat(e.nat)||e.story||e.rival||e.siege||e.hunt)&&(mode==='play'||mode==='battle'),hostile=inBattle?(e.t!=='m'&&(e.alert>0||hn)):(hn&&e.t!=='m'&&e.t!=='f'&&dp<((e.inf!==undefined||e.rival||e.hunt)?760:480)*(todLight()<.3?.7:1));
   let des=e.h;
   if(hostile){
     if(dp>240)des=b;
@@ -2711,7 +2714,7 @@ function drawMini(){
   for(const t of S.tr)if(t.hint){mctx.beginPath();mctx.arc(t.hint.x*k,t.hint.y*k,t.hint.r*k,0,TAU);mctx.stroke()}
   for(const e of enemies){if(e.sink>0)continue;if(e.spc){mctx.fillStyle='#c070ff';mctx.beginPath();mctx.arc(e.x*k,e.y*k,4,0,TAU);mctx.fill();continue}mctx.fillStyle=e.t==='f'?'#ffd04a':e.nat==='pir'?'#222':(FAC[e.nat]?FAC[e.nat].c:'#e9e6dc');mctx.strokeStyle=hostileNat(e.nat)||e.hunt?HCOL():FCOL();mctx.lineWidth=1.6;mctx.beginPath();mctx.arc(e.x*k,e.y*k,e.t==='f'?5:3.8,0,TAU);mctx.fill();mctx.stroke()}
   for(const q of SITES){if(!siteKnown(q))continue;mctx.fillStyle=q.k==='w'?'#8fe3ff':'#e0a060';mctx.fillRect(q.x*k-2,q.y*k-2,4,4)}
-  drawConvMini(k);if(S.story&&S.story.ch===10){mctx.strokeStyle='#ffd04a';mctx.lineWidth=2.4;mctx.beginPath();mctx.arc(S.story.fx*k,S.story.fy*k,8,0,TAU);mctx.stroke()}if(S.rg&&S.rg.kr===1){mctx.strokeStyle='#ff8ad0';mctx.lineWidth=2;mctx.beginPath();mctx.arc(S.rg.kx*k,S.rg.ky*k,7,0,TAU);mctx.stroke()}for(const e of SEAE){mctx.fillStyle=e.k==='ghost'?'#b8c4cc':'#ffffff';mctx.fillRect(e.x*k-1.5,e.y*k-1.5,3,3)}if(S.story&&S.story.ch===4){mctx.strokeStyle='#ffd04a';mctx.lineWidth=2;mctx.beginPath();mctx.arc(S.story.hx*k,S.story.hy*k,7,0,TAU);mctx.stroke()}for(const v of VIL){mctx.fillStyle='#c9a55a';mctx.beginPath();mctx.moveTo(v.x*k,v.y*k-3);mctx.lineTo(v.x*k-3,v.y*k+2);mctx.lineTo(v.x*k+3,v.y*k+2);mctx.fill()}
+  drawConvMini(k);if(S.story&&(S.story.ch===10||S.story.ch===11)&&S.story.fx!==undefined){mctx.strokeStyle='#ffd04a';mctx.lineWidth=2.4;mctx.beginPath();mctx.arc(S.story.fx*k,S.story.fy*k,8,0,TAU);mctx.stroke()}if(S.rg&&S.rg.kr===1){mctx.strokeStyle='#ff8ad0';mctx.lineWidth=2;mctx.beginPath();mctx.arc(S.rg.kx*k,S.rg.ky*k,7,0,TAU);mctx.stroke()}for(const e of SEAE){mctx.fillStyle=e.k==='ghost'?'#b8c4cc':'#ffffff';mctx.fillRect(e.x*k-1.5,e.y*k-1.5,3,3)}if(S.story&&S.story.ch===4){mctx.strokeStyle='#ffd04a';mctx.lineWidth=2;mctx.beginPath();mctx.arc(S.story.hx*k,S.story.hy*k,7,0,TAU);mctx.stroke()}for(const v of VIL){mctx.fillStyle='#c9a55a';mctx.beginPath();mctx.moveTo(v.x*k,v.y*k-3);mctx.lineTo(v.x*k-3,v.y*k+2);mctx.lineTo(v.x*k+3,v.y*k+2);mctx.fill()}
   if(S.hur){mctx.strokeStyle='rgba(230,236,246,.9)';mctx.lineWidth=2;mctx.setLineDash([4,3]);mctx.beginPath();mctx.arc(S.hur.x*k,S.hur.y*k,S.hur.r*k,0,TAU);mctx.stroke();mctx.setLineDash([]);mctx.fillStyle='rgba(60,70,90,.35)';mctx.fill()}
   if(S.raid){mctx.strokeStyle=(T*2|0)%2?'#ff4a3a':'#ffd0c0';mctx.lineWidth=2.4;mctx.beginPath();mctx.arc(S.raid.x*k,S.raid.y*k,8,0,TAU);mctx.stroke()}
   for(const a of ALL){if(a.sink>0)continue;mctx.fillStyle='#7be08a';mctx.beginPath();mctx.arc(a.x*k,a.y*k,2.2,0,TAU);mctx.fill()}
@@ -2738,11 +2741,11 @@ function hud(){if(++toastTopT%5===1)toastTop();
   $('fireL').style.setProperty('--r',clamp(1-P.rl[0]/rt,0,1));
   $('fireR').style.setProperty('--r',clamp(1-P.rl[1]/rt,0,1));
   const c=$('ctx');
-  sneakUI();const pb=$('pbtns');if(mode==='play'&&nearPort&&portHostile(nearPort)){pb.hidden=true;c.hidden=false;c.dataset.k=nearPort.hp<=0?'capture':'attack';c.textContent=nearPort.hp<=0?'Hafen erobern: '+nearPort.n:'Hafen angreifen: '+nearPort.n+' (Festung '+Math.ceil(nearPort.hp)+'/'+nearPort.maxhp+')'}
+  sneakUI();const pb=$('pbtns');if(mode==='play'&&S.story&&S.story.ch===10&&Math.hypot(P.x-S.story.fx,P.y-S.story.fy)<110){pb.hidden=true;c.hidden=false;c.textContent='Angriff befehlen';c.dataset.k='assault'}
+  else if(mode==='play'&&S.story&&S.story.ch===4&&Math.hypot(P.x-S.story.hx,P.y-S.story.hy)<90){pb.hidden=true;c.hidden=false;c.textContent='Versteck stürmen';c.dataset.k='hide'}
+  else if(mode==='play'&&nearPort&&portHostile(nearPort)){pb.hidden=true;c.hidden=false;c.dataset.k=nearPort.hp<=0?'capture':'attack';c.textContent=nearPort.hp<=0?'Hafen erobern: '+nearPort.n:'Hafen angreifen: '+nearPort.n+' (Festung '+Math.ceil(nearPort.hp)+'/'+nearPort.maxhp+')'}
   else if(mode==='play'&&nearPort){pb.hidden=false;$('pname').textContent=nearPort.n;c.hidden=true}
   else if(mode==='play'&&nearTr){pb.hidden=true;c.hidden=false;c.textContent='Hier graben';c.dataset.k='dig'}
-  else if(mode==='play'&&S.story&&S.story.ch===10&&Math.hypot(P.x-S.story.fx,P.y-S.story.fy)<110){pb.hidden=true;c.hidden=false;c.textContent='Angriff befehlen';c.dataset.k='assault'}
-  else if(mode==='play'&&S.story&&S.story.ch===4&&Math.hypot(P.x-S.story.hx,P.y-S.story.hy)<90){pb.hidden=true;c.hidden=false;c.textContent='Versteck stürmen';c.dataset.k='hide'}
   else if(mode==='play'&&nearVil>=0){pb.hidden=true;c.hidden=false;c.textContent='Dorf besuchen';c.dataset.k='vil'}
   else{pb.hidden=true;c.hidden=true}
   const bb=$('bbtn');if(nearBoard&&(mode==='play'||mode==='battle')){bb.hidden=false;bb.textContent='Entern: '+ET[nearBoard.t].n}else bb.hidden=true;
@@ -2908,10 +2911,10 @@ function renderPanel(){
       seenRec(p);h+=specHTML(p);
       GOODS.forEach(g=>{if(banned(p,g)){h+=bannedRow(p,g);return}
         const pr=price(p,g),chip=pr<BASE[g]*0.8?'<span class="chip lo">günstig</span>':pr>BASE[g]*1.2?'<span class="chip hi">gefragt</span>':'';
-        h+='<div class="good"><div class="gname"><b>'+gIco(g)+g+'</b>'+chip+'<span>Kauf '+Math.round(pr*BUYM())+' · Verkauf '+Math.round(pr*SELLM())+'</span>'+tipHTML(p,g)+'</div><div class="gown">'+S.goods[g]+'</div>'
+        h+='<div class="good"><div class="gname"><b>'+gIco(g)+g+'</b>'+chip+'<span>Kauf '+Math.round(price(p,g,1)*BUYM())+' · Verkauf '+Math.round(price(p,g,-1)*SELLM())+'</span>'+tipHTML(p,g)+'</div><div class="gown">'+S.goods[g]+'</div>'
           +'<div class="gbtns"><button data-act="sell:'+g+':999">Alle</button><button data-act="sell:'+g+':10">&minus;10</button><button data-act="sell:'+g+':1">&minus;1</button><button data-act="buy:'+g+':1">+1</button><button data-act="buy:'+g+':10">+10</button><button data-act="buy:'+g+':999">Max</button></div></div>';
       });
-    ['Silber','Gold'].forEach(g=>{if(S.goods[g]>0)h+='<div class="good"><div class="gname"><b>'+gIco(g)+g+' (Beute)</b><span>Verkauf '+Math.round(price(p,g)*SELLM())+' je Stück</span></div><div class="gown">'+S.goods[g]+'</div><div class="gbtns" style="grid-template-columns:repeat(3,1fr)"><button data-act="sell:'+g+':1">&minus;1</button><button data-act="sell:'+g+':5">&minus;5</button><button data-act="sell:'+g+':999">Alle</button></div></div>'});
+    ['Silber','Gold'].forEach(g=>{if(S.goods[g]>0)h+='<div class="good"><div class="gname"><b>'+gIco(g)+g+' (Beute)</b><span>Verkauf '+Math.round(price(p,g,-1)*SELLM())+' je Stück</span></div><div class="gown">'+S.goods[g]+'</div><div class="gbtns" style="grid-template-columns:repeat(3,1fr)"><button data-act="sell:'+g+':1">&minus;1</button><button data-act="sell:'+g+':5">&minus;5</button><button data-act="sell:'+g+':999">Alle</button></div></div>'});
     }else if(pTab==='book'){
       h+=bookHTML(p);
     }else if(pTab==='mgmt'&&isOwn(p)){
@@ -2998,10 +3001,10 @@ function act(e){
   else if((k==='buy'||k==='sell')&&curPort&&banned(curPort,a[1])){toast('Diese Ware ist hier verboten.')}
   else if(k==='bsell'){bsell(a[1])}
   else if(k==='buy'){
-    const g=a[1],n=Math.min(+a[2],capT()-cargoUsed()),pr=Math.round(price(curPort,g)*BUYM()),m=Math.min(n,Math.floor(S.gold/pr));
+    const g=a[1],n=Math.min(+a[2],capT()-cargoUsed()),pr=Math.round(price(curPort,g,1)*BUYM()),m=Math.min(n,Math.floor(S.gold/pr));
     if(m<=0){toast(capT()-cargoUsed()<=0?'Laderaum voll':'Nicht genug Gold')}else{S.gold-=m*pr;S.goods[g]+=m;dmAdd(curPort,g,m,true)}
   }else if(k==='sell'){
-    const g=a[1],m=Math.min(+a[2],S.goods[g]),pr=Math.round(price(curPort,g)*SELLM());
+    const g=a[1],m=Math.min(+a[2],S.goods[g]),pr=Math.round(price(curPort,g,-1)*SELLM());
     if(m>0){S.gold+=m*pr;S.goods[g]-=m;dmAdd(curPort,g,m,false);if(m>=8&&dmOf(curPort,g)<.8)toast('Der Markt ist gesättigt: '+g+' verliert an Wert.')}
   }else if(k==='repair'){
     const rc=Math.ceil((cl.hull-S.hull)*1.5*(curPort&&isOwn(curPort)&&hasB(curPort,'dock')?.5:1));
@@ -3215,7 +3218,7 @@ function showSlots(msg){
     h+='<div class="slot">'+(inf?slotThumb(i):'')+'<b>Platz '+(i+1)+(i===curSlot?' (aktiv)':'')+'</b><small>'+(inf||'leer')+'</small><div class="srow">'
       +(inf?'<button data-s="load:'+i+'">Laden</button><button data-s="code:'+i+'">Code</button><button data-s="file:'+i+'">Datei</button><button data-s="del:'+i+'">Löschen</button>':'')
       +'<button data-s="new:'+i+'">'+(inf?'Überschreiben':'Neue Fahrt')+'</button></div>'+bakRow(i)+(CLOUD?'<div class="srow">'+(inf?'<button data-s="cup:'+i+'">In Cloud sichern</button>':'')+'<button data-s="cdn:'+i+'">Aus Cloud laden</button></div>':'')+'<textarea id="code'+i+'" hidden readonly></textarea></div>';}
-  h+=CLOUD?'<p class="hint">Cloud: Dein Spielstand wird über dein Claude-Konto gesichert und alle 90 Sekunden automatisch aktualisiert. So spielst du auf jedem Gerät weiter, auf dem du das Spiel bei Claude öffnest.</p>':'<p class="hint">Cloud-Speichern gibt es, wenn du das Spiel bei Claude geöffnet hast und angemeldet bist.</p>';
+  h+=CLOUD?'<p class="hint">Cloud: Dein Spielstand wird über dein Claude-Konto gesichert und alle 90 Sekunden automatisch aktualisiert. So spielst du auf jedem Gerät weiter, auf dem du das Spiel bei Claude öffnest.</p>':'';
   try{const ea=JSON.parse(localStorage.getItem('kk-err')||'[]');if(ea.length)h+='<div class="slot"><b>Fehlerprotokoll</b><small>'+ea.length+' Einträge. Bei Problemen hilft der Text weiter.</small><div class="srow"><button data-s="err:0">Anzeigen</button><button data-s="errdel:0">Leeren</button></div><textarea id="errbox" hidden readonly></textarea></div>'}catch(_){}
   $('slotlist').innerHTML=h;
 }
@@ -3405,7 +3408,8 @@ function wmDraw(){if(!wmOpen)return;const c=$('wmc'),r=c.getBoundingClientRect()
   for(const q of SITES){if(!siteKnown(q))continue;g.fillStyle=q.k==='w'?'#8fe3ff':'#e0a060';g.fillRect(q.x-8,q.y-8,16,16)}
   for(const v of VIL){g.fillStyle='#c9a55a';g.beginPath();g.moveTo(v.x,v.y-14);g.lineTo(v.x-12,v.y+8);g.lineTo(v.x+12,v.y+8);g.fill()}
   if(S.raid){g.strokeStyle='#ff4a3a';g.lineWidth=5;g.beginPath();g.arc(S.raid.x,S.raid.y,26,0,TAU);g.stroke()}
-  if(S.story&&S.story.ch===4){g.strokeStyle='#ffd04a';g.lineWidth=5;g.beginPath();g.arc(S.story.hx,S.story.hy,26,0,TAU);g.stroke()}
+  if(S.story&&(S.story.ch===4||S.story.ch===5)&&S.story.hx!==undefined){g.strokeStyle='#ffd04a';g.lineWidth=5;g.beginPath();g.arc(S.story.hx,S.story.hy,26,0,TAU);g.stroke()}
+  if(S.story&&(S.story.ch===10||S.story.ch===11)&&S.story.fx!==undefined){g.strokeStyle='#ffd04a';g.lineWidth=5;g.beginPath();g.arc(S.story.fx,S.story.fy,30,0,TAU);g.stroke();g.beginPath();g.moveTo(S.story.fx-16,S.story.fy-16);g.lineTo(S.story.fx+16,S.story.fy+16);g.moveTo(S.story.fx+16,S.story.fy-16);g.lineTo(S.story.fx-16,S.story.fy+16);g.stroke()}
   for(const e of enemies){if(e.dead||e.sink>0||Math.hypot(e.x-P.x,e.y-P.y)>1200)continue;g.fillStyle=e.nat==='pir'?'#222':(FAC[e.nat]?FAC[e.nat].c:'#ddd');g.strokeStyle=hostileNat(e.nat)?'#ff4a3a':'#6fe08a';g.lineWidth=3;g.beginPath();g.arc(e.x,e.y,9,0,TAU);g.fill();g.stroke()}
   const qt=questTargets();
   for(const p of PORTS){const st=portStat(p)[0];g.fillStyle=natCol(p.f);g.strokeStyle=WM.sel===p?'#fff':st==='own'?'#ffd04a':st==='war'?HCOL():p.f==='pir'?'#f2efe4':'rgba(0,0,0,.6)';const rr=Math.max(12,6.5/WM.k);g.lineWidth=(WM.sel===p?3:st==='own'||st==='war'?2.6:1.6)/WM.k;g.beginPath();g.arc(p.x,p.y,rr,0,TAU);g.fill();g.stroke();if(qt.includes(p)){g.strokeStyle='#ffd04a';g.lineWidth=4;g.beginPath();g.arc(p.x,p.y,24,0,TAU);g.stroke()}}
@@ -3670,6 +3674,8 @@ function campTick2(st){if(CUT||fateOpen||wmOpen||DU||inBattle||mode!=='play')ret
       {s:'dawn',t:'„In '+pn+' lebt ein Kartograf, der ihre Pläne kennt. Wir müssen ihn finden, bevor sie es tun.“',e:'Kurs auf '+pn}],()=>toast('Neues Ziel: Taverne von '+pn+'.'))}
   if(st.ch===8)for(let i=0;i<(st.cons||[]).length;i++){const c=st.cons[i];if(c.done)continue;const p=portByName(c.port);if(!p||Math.hypot(P.x-p.x,P.y-p.y)>1300)continue;if(enemies.some(e=>e.story===12&&e.ci===i&&!e.dead&&e.sink===0))continue;
     const w=waterNear(p.x+200,p.y+220);const e=mkShip(i===1?'s':'w','pir',w.x,w.y,rnd()*TAU,{story:12,ci:i,nm:c.nm,fleet:1,alert:3});e.hull*=1.3;e.mh=e.hull;enemies.push(e)}
+  if(st.ch===9&&st.fx!==undefined){campAct3(st);return}
+  if(st.ch===12){if(st.end)st.ch=13;else campFinale();return}
   if(st.ch===11&&Math.hypot(P.x-st.fx,P.y-st.fy)<1300&&!enemies.some(e=>e.story===13&&!e.dead&&e.sink===0))campSpawnFleet(st)}
 function campCarto(){const st=S.story;const nat=S.nat==='pir'?(NATS4.slice().sort((a,b)=>repOf(b)-repOf(a))[0]):S.nat;
   cutPlay([{h:'Der Kartograf',s:'tavern',t:'Der Kartograf rollt eine Karte auf dem Tisch aus. Drei Namen sind mit roter Tinte markiert: '+CONSN.join(', ')+'.'},
@@ -3679,11 +3685,12 @@ function campCarto(){const st=S.story;const nat=S.nat==='pir'?(NATS4.slice().sor
   ()=>{const used=st.used||[];st.cons=CONSN.map(nm=>{const pn=stPort(used);used.push(pn);return{nm:nm,port:pn,done:0}});st.ch=8;st.port=null;toast('Neue Ziele: Die drei Verschwörer sind auf der Karte golden markiert.')})}
 function campKill(st,e){
   if(e.story===12&&st.ch===8){const c=st.cons[e.ci];if(c&&!c.done){c.done=1;const n=st.cons.filter(q=>q.done).length;toast(c.nm+' ist besiegt! In seiner Kajüte findest du einen Brief ('+n+'/3).');S.gold+=500;
-    if(n>=3){st.ch=9;let fx=0,fy=0;for(let k=0;k<400;k++){const o=ISL[Math.floor(rnd()*ISL.length)];if(o.n)continue;if(!reg2()&&o.x>OLDW-100)continue;const a=rnd()*TAU,r=rAt(o,a)*.9,x=o.x+Math.cos(a)*r,y=o.y+Math.sin(a)*r;if(beachOk(x,y)&&Math.hypot(x-P.x,y-P.y)>900){fx=x;fy=y;break}}if(!fx){const w=randWater();fx=w.x;fy=w.y}st.fx=fx;st.fy=fy;
-      setTimeout(()=>cutPlay([{h:'Akt III: Die Schwarze Flagge',s:'storm',t:'Im Sturm liest du die drei Briefe im Licht einer Laterne. Zusammen ergeben sie eine Karte.'},
+    if(n>=3){st.ch=9;let fx=0,fy=0;for(let k=0;k<400;k++){const o=ISL[Math.floor(rnd()*ISL.length)];if(o.n)continue;if(!reg2()&&o.x>OLDW-100)continue;const a=rnd()*TAU,r=rAt(o,a)*.9,x=o.x+Math.cos(a)*r,y=o.y+Math.sin(a)*r;if(beachOk(x,y)&&Math.hypot(x-P.x,y-P.y)>900){fx=x;fy=y;break}}if(!fx){const w=randWater();fx=w.x;fy=w.y}st.fx=fx;st.fy=fy;save()}}}
+  if(e.story===13&&st.ch===11){st.ch=12;save()}}
+/* Akt III und Finale laufen über campTick2, damit sie auch nach Neuladen weitergehen */
+function campAct3(st){cutPlay([{h:'Akt III: Die Schwarze Flagge',s:'storm',t:'Im Sturm liest du die drei Briefe im Licht einer Laterne. Zusammen ergeben sie eine Karte.'},
         {s:'fort',t:'Die Bruderschaft sammelt ihre Flotte in einer verborgenen Festung. Ihr Anführer, Admiral Vane, will in wenigen Tagen alle Häfen der Karibik angreifen.'},
-        {s:'fort',t:'Es gibt nur einen Weg: die Festung angreifen und Vanes Flaggschiff versenken, bevor seine Flotte ausläuft.',e:'Zur Festung!'}],()=>{st.ch=10;toast('Die Festung der Schwarzen Flagge ist auf der Karte golden markiert.')}),700)}}}
-  if(e.story===13&&st.ch===11){st.ch=12;setTimeout(campFinale,900)}}
+        {s:'fort',t:'Es gibt nur einen Weg: die Festung angreifen und Vanes Flaggschiff versenken, bevor seine Flotte ausläuft.',e:'Zur Festung!'}],()=>{st.ch=10;toast('Die Festung der Schwarzen Flagge ist auf der Karte golden markiert.')})}
 function campAssault(){const st=S.story;cutPlay([{h:'Die Festung',s:'fleet',t:'Hörner schallen über das Wasser. Admiral Vane hat dich entdeckt. Seine schwarzen Schiffe lichten die Anker!',e:'Zum Kampf!'}],()=>{st.ch=11;campSpawnFleet(st)})}
 function campSpawnFleet(st){const w=waterNear(st.fx+140,st.fy+160);const f=mkShip('w','pir',w.x,w.y,rnd()*TAU,{story:13,nm:'Admiral Vane',fleet:1,alert:6});f.hull*=2.4;f.mh=f.hull;enemies.push(f);
   for(let i=0;i<2;i++){const w2=waterNear(st.fx+80+i*120,st.fy+260);enemies.push(mkShip(i?'p':'w','pir',w2.x,w2.y,rnd()*TAU,{story:14,nm:'Schwarze Flagge',fleet:1,alert:6}))}}
@@ -4140,8 +4147,8 @@ function extLogHTML(){let h='';const b=pBounty();
   h+='<div class="kv"><span>Kopfgeld auf dich</span><b>'+(b>0?b+' Gold':'keins')+'</b></div>'+(b>=300?'<p class="hint" style="font-size:12px">Kopfgeldjäger sind hinter dir her. Mit besserem Ruf bei den Nationen sinkt das Kopfgeld.</p>':b>0?'<p class="hint" style="font-size:12px">Ab 300 Gold schicken die Nationen Kopfgeldjäger.</p>':'');
   if(S.ngp)h+='<div class="kv"><span>Neues Spiel+</span><b>Stufe '+S.ngp+(S.heir&&HEIR[S.heir]?' · Erbstück: '+HEIR[S.heir].n:'')+'</b></div>';
   h+=chronHTML();
-  h+='<p class="hint" style="margin-top:12px"><b>Ruhmeshalle aller Kapitäne</b></p><div id="brd"><p class="hint">Lade …</p></div>';
-  h+='<p class="hint" style="margin-top:12px"><b>Flaschenpost</b></p><p class="hint" style="font-size:12px">Schreib eine kurze Nachricht. Andere Kapitäne, mit denen du das Spiel teilst, können sie auf See finden.</p><div class="btnrow" style="display:flex;gap:6px"><input id="btxt" maxlength="80" placeholder="Deine Nachricht (höchstens 80 Zeichen)" aria-label="Nachricht für die Flaschenpost" style="flex:1;min-width:0;padding:8px;border-radius:6px;border:1px solid var(--brass);background:rgba(0,0,0,.25);color:var(--bone);font:inherit"><button data-act="bottle">Werfen</button></div>';
+  if(CLOUD)h+='<p class="hint" style="margin-top:12px"><b>Ruhmeshalle aller Kapitäne</b></p><div id="brd"><p class="hint">Lade …</p></div>';
+  if(CLOUD)h+='<p class="hint" style="margin-top:12px"><b>Flaschenpost</b></p><p class="hint" style="font-size:12px">Schreib eine kurze Nachricht. Andere Kapitäne, mit denen du das Spiel teilst, können sie auf See finden.</p><div class="btnrow" style="display:flex;gap:6px"><input id="btxt" maxlength="80" placeholder="Deine Nachricht (höchstens 80 Zeichen)" aria-label="Nachricht für die Flaschenpost" style="flex:1;min-width:0;padding:8px;border-radius:6px;border:1px solid var(--brass);background:rgba(0,0,0,.25);color:var(--bone);font:inherit"><button data-act="bottle">Werfen</button></div>';
   const end=S.story&&S.story.end;
   h+='<div class="btnrow" style="margin-top:10px"><button data-act="photo">📷 Fotomodus</button>'+(end?(NGPC?'<button class="primary" data-act="ngp2">Wirklich? Neues Spiel+ starten</button>':'<button data-act="ngp">Neues Spiel+</button>'):'')+'</div>';
   if(end)h+='<p class="hint" style="font-size:12px">Neues Spiel+: Du fängst von vorn an und behältst Titel, Erfolge und ein Erbstück. Die Gegner sind '+((S.ngp||0)+1)*20+' % stärker. Dein jetziger Spielstand auf diesem Platz wird überschrieben.</p>';
@@ -4211,7 +4218,7 @@ PORTS.forEach(p=>{p.mod=Object.assign({},p.mod||{});const h=hashStr(p.n),a=NEWG[
 function specHTML(p){return '<p class="hint" style="font-size:12px">Spezialität: <b>'+p.spec+'</b>'+(p.bmat?' und <b>'+p.bmat+'</b>':'')+' (günstig)'+(p.dem?' · Gefragt: <b>'+p.dem+'</b>':'')+(BAN[p.f]?' · Verboten: '+BAN[p.f].join(', '):'')+'</p>'}
 function bsell(g){const p=curPort;if(!p||!banned(p,g))return;const n=S.goods[g]||0;if(n<=0)return;
   if(rnd()<.25){S.goods[g]=0;repAdd(p.f,-6);toast('Die Stadtwache erwischt dich! '+n+' '+g+' werden beschlagnahmt.')}
-  else{const pr=Math.round(price(p,g)*SELLM()*1.6);S.gold+=pr*n;S.goods[g]=0;S.st=S.st||{};S.st.smug=(S.st.smug||0)+1;toast('Unter der Hand verkauft: '+n+' '+g+' für '+pr*n+' Gold.')}}
+  else{const pr=Math.round(price(p,g,-1)*SELLM()*1.6);S.gold+=pr*n;S.goods[g]=0;S.st=S.st||{};S.st.smug=(S.st.smug||0)+1;toast('Unter der Hand verkauft: '+n+' '+g+' für '+pr*n+' Gold.')}}
 /* ---------- Mannschaftserfahrung ---------- */
 function xpOf(){return (S&&S.xp!=null)?S.xp:20}
 function xpName(){const x=xpOf();return x<25?'Neulinge':x<55?'Erfahren':x<80?'Kampferprobt':'Veteranen'}
@@ -7531,7 +7538,7 @@ function ramCheck(dt){
   ramCd-=dt;if(ramCd>0||P.v<38)return;
   const list=inBattle&&battle?battle.list:enemies,cl=CLS[S.cls];
   for(const e of list){
-    if(e.sink>0||e.dead||!legalTarget(e.nat))continue;
+    if(e.sink>0||e.dead||!legalShip(e))continue;
     const dx=e.x-P.x,dy=e.y-P.y,d=Math.hypot(dx,dy),L=ET[e.t].L;
     if(d>(cl.L+L)*.3||Math.abs(angDiff(Math.atan2(dy,dx),P.h))>.62)continue;
     ramCd=3.5;const dmg=20+P.v*.4+cl.L*.15;
@@ -7590,8 +7597,8 @@ function drawMarkers(g,cw,ch){
   const list=[];if(dest)list.push([dest,'#5fe0ff',dest.n||'Ziel']);
   for(const p of questTargets())if(!dest||dest.n!==p.n)list.push([p,'#ffd04a',p.n]);
   if(S.raid)list.push([S.raid,'#ff6a4a','Karawane']);
-  if(S.story&&S.story.ch===4)list.push([{x:S.story.hx,y:S.story.hy},'#ffd04a','Versteck']);
-  if(S.story&&S.story.ch===10)list.push([{x:S.story.fx,y:S.story.fy},'#ffd04a','Festung der Schwarzen Flagge']);
+  if(S.story&&(S.story.ch===4||S.story.ch===5)&&S.story.hx!==undefined)list.push([{x:S.story.hx,y:S.story.hy},'#ffd04a','Versteck']);
+  if(S.story&&(S.story.ch===10||S.story.ch===11)&&S.story.fx!==undefined)list.push([{x:S.story.fx,y:S.story.fy},'#ffd04a','Festung der Schwarzen Flagge']);
   if(S.rg&&S.rg.kr===1)list.push([{x:S.rg.kx,y:S.rg.ky},'#ff8ad0','Hort des Kraken']);
   for(const [t,col,nm] of list){
     let sx=cw/2+(t.x-camX)*camK,sy=ch/2+(t.y-camY)*camK*TK;const d=Math.hypot(t.x-P.x,t.y-P.y);
